@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+
+# Secrets and local configuration: never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*-credentials.json
+*service-account*.json
+google-services.json
+GoogleService-Info.plist
+
+# Data exports and backups belong outside the repo
+*backup*.json
+*.export.json
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+
+# Local working log (may reference unreleased security work)
+PROGRESS.md
