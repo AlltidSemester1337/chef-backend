@@ -3,6 +3,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI
 
 from chef_backend import __doc__ as description
+from chef_backend.ai.routes import router as ai_router
 from chef_backend.auth import AuthenticatedUser, get_current_user
 from chef_backend.config import get_settings
 
@@ -22,6 +23,7 @@ def create_app() -> FastAPI:
         """The authenticated caller. Lets clients smoke-test their ID and App Check tokens."""
         return user
 
+    app.include_router(ai_router)
     return app
 
 
