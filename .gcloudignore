@@ -1,0 +1,10 @@
+# Upload only what the Docker build needs (mirrors .dockerignore), so local files
+# such as .env never leave the machine.
+*
+!Dockerfile
+!.dockerignore
+!pyproject.toml
+!uv.lock
+!README.md
+!src/
+**/__pycache__

@@ -1,7 +1,7 @@
 """Request authentication: Firebase ID token + Firebase App Check token.
 
 Auth is a FastAPI dependency rather than middleware, so each route opts in
-(``Depends(get_current_user)``) and open routes such as ``/healthz`` stay open.
+(``Depends(get_current_user)``) and open routes such as ``/health`` stay open.
 
 Token verification sits behind the ``TokenVerifier`` protocol. Production uses
 ``FirebaseTokenVerifier``; tests override ``get_token_verifier`` with a fake via
@@ -89,7 +89,7 @@ class FirebaseTokenVerifier:
 
 @lru_cache
 def get_token_verifier() -> TokenVerifier:
-    """Create the production verifier on first use, so /healthz never touches Firebase."""
+    """Create the production verifier on first use, so /health never touches Firebase."""
     project_id = get_settings().gcp_project_id
     if not project_id:
         # Fail closed with a 500 rather than letting every request through or 401.

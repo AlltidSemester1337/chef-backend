@@ -180,10 +180,10 @@ def test_unexpected_verifier_failure_is_500_not_401(
 # --- Open routes stay open -----------------------------------------------------
 
 
-def test_healthz_needs_no_tokens_and_never_calls_the_verifier(
+def test_health_needs_no_tokens_and_never_calls_the_verifier(
     client: TestClient, verifier: FakeVerifier
 ) -> None:
-    response = client.get("/healthz")
+    response = client.get("/health")
 
     assert response.status_code == 200
     assert verifier.id_tokens_seen == []

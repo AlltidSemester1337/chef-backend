@@ -19,7 +19,7 @@ uv sync
 cp .env.example .env            # placeholders only; never commit .env
 gcloud auth application-default login   # Google credentials via ADC, no key files
 uv run uvicorn chef_backend.main:app --reload --port 8080
-curl localhost:8080/healthz
+curl localhost:8080/health
 ```
 
 Run checks:
