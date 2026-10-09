@@ -1,5 +1,7 @@
 from functools import lru_cache
+from pathlib import Path
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +16,15 @@ class Settings(BaseSettings):
 
     environment: str = "local"
     gcp_project_id: str | None = None
+
+    # AI proxy. The key comes from Secret Manager as an env var; the main chat prompt
+    # is private and mounted from Secret Manager as a file (locally: an untracked file).
+    berget_api_key: SecretStr | None = None
+    berget_base_url: str = "https://api.berget.ai/v1"
+    berget_timeout_seconds: float = 60.0
+    chat_prompt_file: Path | None = None
+
+    beta_interaction_limit: int = 20
 
 
 @lru_cache

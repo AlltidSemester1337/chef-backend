@@ -27,6 +27,10 @@ class AuthenticatedUser:
     uid: str
     email: str | None
     email_verified: bool
+    is_anonymous: bool = False
+    # Firebase custom claim {"admin": true}, set with the Admin SDK. Never derived
+    # from the email address, so no admin list has to live in code.
+    is_admin: bool = False
 
 
 class InvalidTokenError(Exception):
@@ -125,8 +129,11 @@ def get_current_user(
         raise unauthorized from None
 
     # A verified ID token always has "uid"; email claims are absent for e.g. anonymous users.
+    firebase_claims: Claims = claims.get("firebase") or {}
     return AuthenticatedUser(
         uid=claims["uid"],
         email=claims.get("email"),
         email_verified=claims.get("email_verified", False),
+        is_anonymous=firebase_claims.get("sign_in_provider") == "anonymous",
+        is_admin=claims.get("admin") is True,
     )
