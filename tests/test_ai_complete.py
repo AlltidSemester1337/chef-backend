@@ -1,21 +1,20 @@
 """Spec for POST /v1/ai/complete, with every collaborator faked."""
 
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
-from chef_backend.ai.client import UpstreamError
+from chef_backend.ai.client import Completion, CompletionCall, UpstreamError
 from chef_backend.ai.dependencies import (
     get_beta_interaction_limit,
     get_chat_client,
     get_purposes,
     get_quota_store,
 )
-from chef_backend.ai.models import ChatMessage
-from chef_backend.ai.purposes import Purpose, PurposeConfig, build_purposes
+from chef_backend.ai.purposes import Purpose, build_purposes
 from chef_backend.auth import AuthenticatedUser, Claims, get_current_user, get_token_verifier
 from chef_backend.main import create_app
 
@@ -30,15 +29,13 @@ PROVIDER_SECRET_DETAIL = "invalid api key sk-test-123"
 class FakeChatClient:
     reply: str = "Gör en carbonara."
     error: Exception | None = None
-    calls: list[tuple[PurposeConfig, list[ChatMessage]]] = field(
-        default_factory=list[tuple[PurposeConfig, list[ChatMessage]]]
-    )
+    calls: list[CompletionCall] = field(default_factory=list[CompletionCall])
 
-    def complete(self, config: PurposeConfig, messages: Sequence[ChatMessage]) -> str:
-        self.calls.append((config, list(messages)))
+    def complete(self, call: CompletionCall) -> Completion:
+        self.calls.append(call)
         if self.error is not None:
             raise self.error
-        return self.reply
+        return Completion(content=self.reply)
 
 
 @dataclass
@@ -105,9 +102,11 @@ def test_calls_the_model_with_the_server_side_config(
 
     client.post(URL, json=body(purpose.value, messages=messages))
 
-    [(config, sent)] = world.chat.calls
-    assert config == PURPOSES[purpose]
-    assert [m.model_dump() for m in sent] == messages
+    [call] = world.chat.calls
+    assert call.purpose == purpose
+    assert call.config == PURPOSES[purpose]
+    assert [m.model_dump() for m in call.messages] == messages
+    assert call.user_id == VERIFIED.uid
 
 
 # --- Quota --------------------------------------------------------------------

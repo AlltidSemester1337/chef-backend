@@ -26,6 +26,12 @@ class Settings(BaseSettings):
 
     beta_interaction_limit: int = 20
 
+    # Tracing to Arize Phoenix (OTLP over HTTP). Optional: without endpoint and key
+    # the backend runs untraced. The endpoint is project-specific config, not a secret.
+    phoenix_endpoint: str | None = None
+    phoenix_api_key: SecretStr | None = None
+    phoenix_project_name: str = "chef-backend"
+
 
 @lru_cache
 def get_settings() -> Settings:
