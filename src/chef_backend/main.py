@@ -9,6 +9,9 @@ from chef_backend.ai.dependencies import get_chat_client, get_purposes, get_quot
 from chef_backend.ai.routes import router as ai_router
 from chef_backend.auth import AuthenticatedUser, get_current_user, get_token_verifier
 from chef_backend.config import Settings, get_settings
+from chef_backend.telemetry import shutdown_tracing
+from chef_backend.tts import get_speech_synthesizer
+from chef_backend.tts import router as tts_router
 
 
 def check_production_config() -> None:
@@ -20,6 +23,7 @@ def check_production_config() -> None:
     get_purposes()
     get_chat_client()
     get_quota_store()
+    get_speech_synthesizer()
     get_token_verifier()
 
 
@@ -31,6 +35,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if settings.environment == "prod":
             check_production_config()
         yield
+        shutdown_tracing()
 
     app = FastAPI(
         title="Chef backend", description=description or "", version="0.1.0", lifespan=lifespan
@@ -48,6 +53,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return user
 
     app.include_router(ai_router)
+    app.include_router(tts_router)
     return app
 
 

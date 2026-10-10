@@ -6,9 +6,9 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from chef_backend.ai.client import BergetClient, UpstreamError
+from chef_backend.ai.client import BergetClient, Completion, CompletionCall, UpstreamError
 from chef_backend.ai.models import ChatMessage
-from chef_backend.ai.purposes import PurposeConfig
+from chef_backend.ai.purposes import Purpose, PurposeConfig
 
 CONFIG = PurposeConfig(system_prompt="You are Chef.", temperature=0.7, top_p=0.95, max_tokens=512)
 MESSAGES = [
@@ -16,6 +16,10 @@ MESSAGES = [
     ChatMessage(role="assistant", content="Hej!"),
     ChatMessage(role="user", content="Pasta?"),
 ]
+
+
+def call(config: PurposeConfig = CONFIG) -> CompletionCall:
+    return CompletionCall(purpose=Purpose.CHAT, config=config, messages=MESSAGES, user_id="u1")
 
 
 def ok(content: object = "Gör en carbonara.") -> httpx.Response:
@@ -33,7 +37,35 @@ def client_with(handler: Callable[[httpx.Request], httpx.Response]) -> BergetCli
 
 
 def test_returns_the_assistant_content() -> None:
-    assert client_with(lambda _: ok()).complete(CONFIG, MESSAGES) == "Gör en carbonara."
+    assert client_with(lambda _: ok()).complete(call()).content == "Gör en carbonara."
+
+
+def test_returns_token_usage_when_reported() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "Svar"}}],
+                "usage": {"prompt_tokens": 120, "completion_tokens": 30, "total_tokens": 150},
+            },
+        )
+
+    assert client_with(handler).complete(call()) == Completion(
+        content="Svar", prompt_tokens=120, completion_tokens=30
+    )
+
+
+def test_missing_or_odd_usage_is_ignored() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "Svar"}}],
+                "usage": {"prompt_tokens": "many", "completion_tokens": True},
+            },
+        )
+
+    assert client_with(handler).complete(call()) == Completion(content="Svar")
 
 
 def test_sends_server_side_prompt_and_parameters() -> None:
@@ -43,7 +75,7 @@ def test_sends_server_side_prompt_and_parameters() -> None:
         seen.append(request)
         return ok()
 
-    client_with(handler).complete(CONFIG, MESSAGES)
+    client_with(handler).complete(call())
 
     [request] = seen
     assert request.method == "POST"
@@ -71,7 +103,7 @@ def test_json_mode_requests_a_json_object() -> None:
     json_config = PurposeConfig(
         system_prompt="Extract.", temperature=0.2, top_p=0.95, max_tokens=512, json_mode=True
     )
-    client_with(handler).complete(json_config, MESSAGES)
+    client_with(handler).complete(call(json_config))
 
     assert json.loads(seen[0].content)["response_format"] == {"type": "json_object"}
 
@@ -96,4 +128,4 @@ def test_provider_failures_become_upstream_error(
     handler: Callable[[httpx.Request], httpx.Response],
 ) -> None:
     with pytest.raises(UpstreamError):
-        client_with(handler).complete(CONFIG, MESSAGES)
+        client_with(handler).complete(call())

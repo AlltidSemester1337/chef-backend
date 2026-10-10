@@ -12,8 +12,10 @@ from google.cloud import firestore
 
 from chef_backend.ai.client import BergetClient, ChatCompletionClient
 from chef_backend.ai.purposes import Purpose, PurposeConfig, build_purposes
+from chef_backend.ai.tracing import TracingChatClient
 from chef_backend.config import get_settings
 from chef_backend.quota import FirestoreQuotaStore, QuotaStore
+from chef_backend.telemetry import get_tracer_provider
 
 
 @lru_cache
@@ -32,11 +34,15 @@ def get_chat_client() -> ChatCompletionClient:
     settings = get_settings()
     if settings.berget_api_key is None:
         raise RuntimeError("CHEF_BERGET_API_KEY must be set")
-    return BergetClient.create(
+    client = BergetClient.create(
         base_url=settings.berget_base_url,
         api_key=settings.berget_api_key.get_secret_value(),
         timeout_seconds=settings.berget_timeout_seconds,
     )
+    tracer_provider = get_tracer_provider()
+    if tracer_provider is None:
+        return client
+    return TracingChatClient(client, tracer_provider.get_tracer("chef_backend.ai"))
 
 
 @lru_cache

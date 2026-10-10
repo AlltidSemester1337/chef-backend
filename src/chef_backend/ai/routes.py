@@ -6,7 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from chef_backend.ai.client import ChatCompletionClient, UpstreamError
+from chef_backend.ai.client import ChatCompletionClient, CompletionCall, UpstreamError
 from chef_backend.ai.dependencies import (
     get_beta_interaction_limit,
     get_chat_client,
@@ -46,10 +46,17 @@ def complete(
             pass
 
     try:
-        content = chat_client.complete(config, request.messages)
+        completion = chat_client.complete(
+            CompletionCall(
+                purpose=request.purpose,
+                config=config,
+                messages=request.messages,
+                user_id=user.uid,
+            )
+        )
     except UpstreamError:
         # Log the purpose only; message content is user data and stays out of logs.
         logger.exception("AI provider call failed (purpose=%s)", request.purpose.value)
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "upstream_error") from None
 
-    return CompletionResponse(content=content)
+    return CompletionResponse(content=completion.content)
