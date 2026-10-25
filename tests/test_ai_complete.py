@@ -2,6 +2,7 @@
 
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field, replace
+from datetime import date
 from typing import Any
 
 import pytest
@@ -10,12 +11,16 @@ from fastapi.testclient import TestClient
 from chef_backend.ai.client import Completion, CompletionCall, UpstreamError
 from chef_backend.ai.dependencies import (
     get_beta_interaction_limit,
+    get_budget_store,
     get_chat_client,
+    get_daily_ai_uncounted_call_limit,
     get_purposes,
     get_quota_store,
+    get_today,
 )
-from chef_backend.ai.purposes import Purpose, build_purposes
+from chef_backend.ai.purposes import CONVERSATION_PURPOSES, Purpose, build_purposes
 from chef_backend.auth import AuthenticatedUser, Claims, get_current_user, get_token_verifier
+from chef_backend.budget import UsageKind
 from chef_backend.main import create_app
 
 URL = "/v1/ai/complete"
@@ -47,6 +52,22 @@ class FakeQuotaStore:
         return self.count
 
 
+TODAY = date(2026, 10, 18)
+DAILY_LIMIT = 3
+
+
+@dataclass
+class FakeBudgetStore:
+    usage: dict[tuple[str, date, UsageKind], int] = field(
+        default_factory=dict[tuple[str, date, UsageKind], int]
+    )
+
+    def add_and_get(self, uid: str, day: date, kind: UsageKind, amount: int) -> int:
+        key = (uid, day, kind)
+        self.usage[key] = self.usage.get(key, 0) + amount
+        return self.usage[key]
+
+
 @dataclass
 class World:
     """The faked collaborators, so a test can configure them and inspect what happened."""
@@ -54,6 +75,7 @@ class World:
     user: AuthenticatedUser = VERIFIED
     chat: FakeChatClient = field(default_factory=FakeChatClient)
     quota: FakeQuotaStore = field(default_factory=FakeQuotaStore)
+    budget: FakeBudgetStore = field(default_factory=FakeBudgetStore)
 
 
 @pytest.fixture
@@ -68,6 +90,9 @@ def client(world: World) -> Iterator[TestClient]:
         get_current_user: lambda: world.user,
         get_chat_client: lambda: world.chat,
         get_quota_store: lambda: world.quota,
+        get_budget_store: lambda: world.budget,
+        get_daily_ai_uncounted_call_limit: lambda: DAILY_LIMIT,
+        get_today: lambda: TODAY,
         get_purposes: lambda: PURPOSES,
         get_beta_interaction_limit: lambda: LIMIT,
     }
@@ -94,11 +119,15 @@ def test_returns_the_model_reply(client: TestClient) -> None:
 def test_calls_the_model_with_the_server_side_config(
     client: TestClient, world: World, purpose: Purpose
 ) -> None:
-    messages = [
-        {"role": "user", "content": "Hej"},
-        {"role": "assistant", "content": "Hej!"},
-        {"role": "user", "content": "Pasta?"},
-    ]
+    messages = (
+        [
+            {"role": "user", "content": "Hej"},
+            {"role": "assistant", "content": "Hej!"},
+            {"role": "user", "content": "Pasta?"},
+        ]
+        if purpose in CONVERSATION_PURPOSES
+        else [{"role": "user", "content": "Pasta?"}]
+    )
 
     client.post(URL, json=body(purpose.value, messages=messages))
 
@@ -107,6 +136,46 @@ def test_calls_the_model_with_the_server_side_config(
     assert call.config == PURPOSES[purpose]
     assert [m.model_dump() for m in call.messages] == messages
     assert call.user_id == VERIFIED.uid
+
+
+def test_the_model_gets_the_normalized_conversation(client: TestClient, world: World) -> None:
+    client.post(
+        URL,
+        json=body(
+            messages=[
+                {"role": "user", "content": "first"},
+                {"role": "user", "content": "second"},
+            ]
+        ),
+    )
+
+    [call] = world.chat.calls
+    assert [m.model_dump() for m in call.messages] == [
+        {"role": "user", "content": "first\n\nsecond"}
+    ]
+
+
+@pytest.mark.parametrize(
+    "bad_body",
+    [
+        body("recipe_adjust", messages=[{"role": "user", "content": "a"}] * 2),
+        body("chat", messages=[{"role": "assistant", "content": "a"}]),
+        body(
+            "chat",
+            messages=[{"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}],
+        ),
+    ],
+    ids=["two messages to single-shot", "assistant only", "ends with assistant"],
+)
+def test_wrong_shapes_are_422_and_cost_nothing(
+    client: TestClient, world: World, bad_body: dict[str, Any]
+) -> None:
+    response = client.post(URL, json=bad_body)
+
+    assert response.status_code == 422
+    assert world.chat.calls == []
+    assert world.quota.count == 0
+    assert world.budget.usage == {}
 
 
 # --- Quota --------------------------------------------------------------------
@@ -250,6 +319,9 @@ def test_requires_authentication(world: World) -> None:
             get_token_verifier: UnusedVerifier,
             get_chat_client: lambda: world.chat,
             get_quota_store: lambda: world.quota,
+            get_budget_store: lambda: world.budget,
+            get_daily_ai_uncounted_call_limit: lambda: DAILY_LIMIT,
+            get_today: lambda: TODAY,
             get_purposes: lambda: PURPOSES,
         }
     )
@@ -259,3 +331,59 @@ def test_requires_authentication(world: World) -> None:
     assert response.status_code == 401
     assert world.chat.calls == []
     assert world.quota.count == 0
+
+
+# --- Daily budget for uncounted purposes ---------------------------------------
+
+
+def uncounted_calls(world: World) -> int:
+    return world.budget.usage.get((VERIFIED.uid, TODAY, UsageKind.AI_UNCOUNTED_CALLS), 0)
+
+
+def test_uncounted_purposes_use_the_daily_budget(client: TestClient, world: World) -> None:
+    client.post(URL, json=body("derive_recipe_json"))
+
+    assert uncounted_calls(world) == 1
+
+
+def test_counted_purposes_do_not_use_the_daily_budget(client: TestClient, world: World) -> None:
+    client.post(URL, json=body("chat"))
+
+    assert uncounted_calls(world) == 0
+
+
+def test_over_the_daily_budget_is_429_rate_limited(client: TestClient, world: World) -> None:
+    statuses = [
+        client.post(URL, json=body("extract_preferences")).status_code
+        for _ in range(DAILY_LIMIT + 1)
+    ]
+
+    assert statuses == [200] * DAILY_LIMIT + [429]
+    assert client.post(URL, json=body("compact_history")).json() == {"detail": "rate_limited"}
+    assert len(world.chat.calls) == DAILY_LIMIT
+
+
+def test_admin_has_no_daily_budget(client: TestClient, world: World) -> None:
+    world.user = replace(VERIFIED, is_admin=True)
+
+    statuses = {
+        client.post(URL, json=body("derive_recipe_json")).status_code
+        for _ in range(DAILY_LIMIT + 2)
+    }
+
+    assert statuses == {200}
+
+
+def test_ineligible_users_do_not_touch_the_daily_budget(client: TestClient, world: World) -> None:
+    world.user = replace(VERIFIED, email_verified=False)
+
+    assert client.post(URL, json=body("derive_recipe_json")).status_code == 403
+    assert world.budget.usage == {}
+
+
+def test_budget_is_used_even_if_the_provider_fails(client: TestClient, world: World) -> None:
+    world.chat.error = UpstreamError("timeout")
+
+    client.post(URL, json=body("derive_recipe_json"))
+
+    assert uncounted_calls(world) == 1

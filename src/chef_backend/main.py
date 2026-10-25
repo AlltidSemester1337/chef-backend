@@ -5,7 +5,12 @@ from typing import Annotated
 from fastapi import Depends, FastAPI
 
 from chef_backend import __doc__ as description
-from chef_backend.ai.dependencies import get_chat_client, get_purposes, get_quota_store
+from chef_backend.ai.dependencies import (
+    get_budget_store,
+    get_chat_client,
+    get_purposes,
+    get_quota_store,
+)
 from chef_backend.ai.routes import router as ai_router
 from chef_backend.auth import AuthenticatedUser, get_current_user, get_token_verifier
 from chef_backend.config import Settings, get_settings
@@ -23,6 +28,7 @@ def check_production_config() -> None:
     get_purposes()
     get_chat_client()
     get_quota_store()
+    get_budget_store()
     get_speech_synthesizer()
     get_token_verifier()
 

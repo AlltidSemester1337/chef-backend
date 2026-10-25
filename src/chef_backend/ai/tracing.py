@@ -37,6 +37,9 @@ class TracingChatClient:
             "llm.invocation_parameters": json.dumps(invocation_parameters(call.config)),
             "chef.purpose": call.purpose.value,
             "user.id": call.user_id,
+            # Request size, for setting per-purpose limits on measured data.
+            "chef.request.message_count": len(call.messages),
+            "chef.request.total_chars": sum(len(message.content) for message in call.messages),
             "input.value": json.dumps(
                 [message.model_dump() for message in call.messages], ensure_ascii=False
             ),

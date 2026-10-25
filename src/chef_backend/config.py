@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     chat_prompt_file: Path | None = None
 
     beta_interaction_limit: int = 20
+    # Daily per-user budgets (Europe/Stockholm days) for calls the beta quota does
+    # not count: background AI purposes and text-to-speech.
+    daily_ai_uncounted_call_limit: int = 50
+    daily_tts_char_limit: int = 25_000
 
     # Tracing to Arize Phoenix (OTLP over HTTP). Optional: without endpoint and key
     # the backend runs untraced. The endpoint is project-specific config, not a secret.

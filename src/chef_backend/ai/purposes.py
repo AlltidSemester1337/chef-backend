@@ -23,6 +23,12 @@ class Purpose(StrEnum):
     OVERLAY_RECIPE_CONTEXT = "overlay_recipe_context"
 
 
+# Purposes that carry a chat history. All others are single-shot: one user message in.
+CONVERSATION_PURPOSES = frozenset(
+    {Purpose.CHAT, Purpose.OVERLAY_DEFAULT, Purpose.OVERLAY_RECIPE_CONTEXT}
+)
+
+
 @dataclass(frozen=True, slots=True)
 class PurposeConfig:
     system_prompt: str

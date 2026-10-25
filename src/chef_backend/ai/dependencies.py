@@ -6,6 +6,7 @@ Tests replace these through app.dependency_overrides.
 """
 
 from collections.abc import Mapping
+from datetime import date
 from functools import lru_cache
 
 from google.cloud import firestore
@@ -13,6 +14,7 @@ from google.cloud import firestore
 from chef_backend.ai.client import BergetClient, ChatCompletionClient
 from chef_backend.ai.purposes import Purpose, PurposeConfig, build_purposes
 from chef_backend.ai.tracing import TracingChatClient
+from chef_backend.budget import BudgetStore, FirestoreBudgetStore, stockholm_today
 from chef_backend.config import get_settings
 from chef_backend.quota import FirestoreQuotaStore, QuotaStore
 from chef_backend.telemetry import get_tracer_provider
@@ -46,13 +48,36 @@ def get_chat_client() -> ChatCompletionClient:
 
 
 @lru_cache
-def get_quota_store() -> QuotaStore:
+def get_firestore_client() -> firestore.Client:
     project_id = get_settings().gcp_project_id
     if not project_id:
         raise RuntimeError("CHEF_GCP_PROJECT_ID must be set")
     # Credentials via ADC: the Cloud Run service account, locally gcloud's user login.
-    return FirestoreQuotaStore(firestore.Client(project=project_id))
+    return firestore.Client(project=project_id)
+
+
+@lru_cache
+def get_quota_store() -> QuotaStore:
+    return FirestoreQuotaStore(get_firestore_client())
+
+
+@lru_cache
+def get_budget_store() -> BudgetStore:
+    return FirestoreBudgetStore(get_firestore_client())
 
 
 def get_beta_interaction_limit() -> int:
     return get_settings().beta_interaction_limit
+
+
+def get_daily_ai_uncounted_call_limit() -> int:
+    return get_settings().daily_ai_uncounted_call_limit
+
+
+def get_daily_tts_char_limit() -> int:
+    return get_settings().daily_tts_char_limit
+
+
+def get_today() -> date:
+    """The budget day. A dependency so tests can pin the date."""
+    return stockholm_today()

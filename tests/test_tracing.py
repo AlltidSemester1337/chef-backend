@@ -233,3 +233,13 @@ def test_failed_span_still_shows_what_was_sent(
     a = attrs(only_span(exporter))
     assert a["llm.input_messages.2.message.content"] == "Något med kikärtor"
     assert json.loads(str(a["input.value"])) == [m.model_dump() for m in CALL.messages]
+
+
+def test_span_records_the_request_size(
+    client: TracingChatClient, exporter: InMemorySpanExporter
+) -> None:
+    client.complete(CALL)
+
+    a = attrs(only_span(exporter))
+    assert a["chef.request.message_count"] == 3
+    assert a["chef.request.total_chars"] == sum(len(m.content) for m in CALL.messages)
