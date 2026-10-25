@@ -5,6 +5,7 @@ The apps send one sentence per request; the length cap matches theirs.
 """
 
 import logging
+from datetime import date
 from functools import lru_cache
 from typing import Annotated, Protocol
 
@@ -13,10 +14,18 @@ from google.api_core.exceptions import GoogleAPIError
 from google.cloud import texttospeech
 from pydantic import BaseModel, ConfigDict, Field
 
+from chef_backend.access import require_budget, require_quota
 from chef_backend.ai.client import UpstreamError
-from chef_backend.ai.dependencies import get_beta_interaction_limit, get_quota_store
+from chef_backend.ai.dependencies import (
+    get_beta_interaction_limit,
+    get_budget_store,
+    get_daily_tts_char_limit,
+    get_quota_store,
+    get_today,
+)
 from chef_backend.auth import AuthenticatedUser, get_current_user
-from chef_backend.quota import QuotaDecision, QuotaStore, check_quota
+from chef_backend.budget import BudgetStore, UsageKind, check_budget
+from chef_backend.quota import QuotaStore, check_quota
 
 logger = logging.getLogger(__name__)
 
@@ -79,15 +88,23 @@ def synthesize(
     synthesizer: Annotated[SpeechSynthesizer, Depends(get_speech_synthesizer)],
     quota_store: Annotated[QuotaStore, Depends(get_quota_store)],
     limit: Annotated[int, Depends(get_beta_interaction_limit)],
+    budget_store: Annotated[BudgetStore, Depends(get_budget_store)],
+    daily_char_limit: Annotated[int, Depends(get_daily_tts_char_limit)],
+    today: Annotated[date, Depends(get_today)],
 ) -> Response:
-    """Speak one piece of text. Needs an eligible user but does not consume quota."""
-    match check_quota(user, quota_store, counted=False, limit=limit):
-        case QuotaDecision.BLOCKED:
-            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "quota_exceeded")
-        case QuotaDecision.EMAIL_VERIFICATION_REQUIRED:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "email_verification_required")
-        case QuotaDecision.ALLOWED:
-            pass
+    """Speak one piece of text. Needs an eligible user and fits in a daily character
+    budget (the apps send one sentence per request, so calls would be a poor measure)."""
+    require_quota(check_quota(user, quota_store, counted=False, limit=limit))
+    require_budget(
+        check_budget(
+            user,
+            budget_store,
+            kind=UsageKind.TTS_CHARS,
+            amount=len(request.text),
+            limit=daily_char_limit,
+            day=today,
+        )
+    )
 
     try:
         audio = synthesizer.synthesize(request.text)

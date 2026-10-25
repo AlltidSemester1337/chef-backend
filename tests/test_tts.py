@@ -1,5 +1,6 @@
 from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
+from datetime import date
 from typing import Any, cast
 
 import pytest
@@ -8,8 +9,15 @@ from google.api_core.exceptions import PermissionDenied, ServiceUnavailable
 from google.cloud import texttospeech
 
 from chef_backend.ai.client import UpstreamError
-from chef_backend.ai.dependencies import get_beta_interaction_limit, get_quota_store
+from chef_backend.ai.dependencies import (
+    get_beta_interaction_limit,
+    get_budget_store,
+    get_daily_tts_char_limit,
+    get_quota_store,
+    get_today,
+)
 from chef_backend.auth import AuthenticatedUser, Claims, get_current_user, get_token_verifier
+from chef_backend.budget import UsageKind
 from chef_backend.main import create_app
 from chef_backend.tts import (
     MAX_TTS_CHARS,
@@ -92,11 +100,28 @@ class FakeQuotaStore:
         return self.increments
 
 
+TODAY = date(2026, 10, 18)
+DAILY_CHAR_LIMIT = 100
+
+
+@dataclass
+class FakeBudgetStore:
+    usage: dict[tuple[str, date, UsageKind], int] = field(
+        default_factory=dict[tuple[str, date, UsageKind], int]
+    )
+
+    def add_and_get(self, uid: str, day: date, kind: UsageKind, amount: int) -> int:
+        key = (uid, day, kind)
+        self.usage[key] = self.usage.get(key, 0) + amount
+        return self.usage[key]
+
+
 @dataclass
 class World:
     user: AuthenticatedUser = VERIFIED
     tts: FakeSynthesizer = field(default_factory=FakeSynthesizer)
     quota: FakeQuotaStore = field(default_factory=FakeQuotaStore)
+    budget: FakeBudgetStore = field(default_factory=FakeBudgetStore)
 
 
 @pytest.fixture
@@ -112,6 +137,9 @@ def client(world: World) -> Iterator[TestClient]:
             get_current_user: lambda: world.user,
             get_speech_synthesizer: lambda: world.tts,
             get_quota_store: lambda: world.quota,
+            get_budget_store: lambda: world.budget,
+            get_daily_tts_char_limit: lambda: DAILY_CHAR_LIMIT,
+            get_today: lambda: TODAY,
             get_beta_interaction_limit: lambda: 20,
         }
     )
@@ -202,6 +230,9 @@ def test_requires_authentication(world: World) -> None:
             get_token_verifier: UnusedVerifier,
             get_speech_synthesizer: lambda: world.tts,
             get_quota_store: lambda: world.quota,
+            get_budget_store: lambda: world.budget,
+            get_daily_tts_char_limit: lambda: DAILY_CHAR_LIMIT,
+            get_today: lambda: TODAY,
         }
     )
 
@@ -209,3 +240,41 @@ def test_requires_authentication(world: World) -> None:
 
     assert response.status_code == 401
     assert world.tts.texts == []
+
+
+# --- Daily character budget ----------------------------------------------------
+
+
+def tts_chars(world: World) -> int:
+    return world.budget.usage.get((VERIFIED.uid, TODAY, UsageKind.TTS_CHARS), 0)
+
+
+def test_characters_are_counted_against_the_daily_budget(client: TestClient, world: World) -> None:
+    client.post(URL, json={"text": "Preheat the oven."})
+
+    assert tts_chars(world) == len("Preheat the oven.")
+
+
+def test_over_the_character_budget_is_429_rate_limited(client: TestClient, world: World) -> None:
+    sentence = "x" * 40
+
+    statuses = [client.post(URL, json={"text": sentence}).status_code for _ in range(3)]
+
+    # 40 + 40 fits in 100; the third sentence would make it 120.
+    assert statuses == [200, 200, 429]
+    assert client.post(URL, json={"text": "y"}).json() == {"detail": "rate_limited"}
+    assert len(world.tts.texts) == 2
+
+
+def test_admin_has_no_character_budget(client: TestClient, world: World) -> None:
+    world.user = replace(VERIFIED, is_admin=True)
+
+    statuses = {client.post(URL, json={"text": "x" * 90}).status_code for _ in range(3)}
+
+    assert statuses == {200}
+
+
+def test_invalid_requests_do_not_use_the_character_budget(client: TestClient, world: World) -> None:
+    client.post(URL, json={"text": "x" * (MAX_TTS_CHARS + 1)})
+
+    assert world.budget.usage == {}
