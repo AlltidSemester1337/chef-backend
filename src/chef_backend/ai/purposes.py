@@ -21,12 +21,16 @@ class Purpose(StrEnum):
     RECIPE_ADJUST = "recipe_adjust"
     OVERLAY_DEFAULT = "overlay_default"
     OVERLAY_RECIPE_CONTEXT = "overlay_recipe_context"
+    COOKING_RESOURCES = "cooking_resources"
 
 
 # Purposes that carry a chat history. All others are single-shot: one user message in.
 CONVERSATION_PURPOSES = frozenset(
     {Purpose.CHAT, Purpose.OVERLAY_DEFAULT, Purpose.OVERLAY_RECIPE_CONTEXT}
 )
+# Purposes with their own endpoint, which validates the model output. They are not
+# available through the generic /v1/ai/complete.
+INTERNAL_PURPOSES = frozenset({Purpose.COOKING_RESOURCES})
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,5 +102,12 @@ def build_purposes(chat_prompt: str) -> Mapping[Purpose, PurposeConfig]:
             top_p=0.95,
             max_tokens=2048,
             counts_toward_quota=True,
+        ),
+        Purpose.COOKING_RESOURCES: PurposeConfig(
+            system_prompt=load_public_prompt(Purpose.COOKING_RESOURCES),
+            temperature=0.4,
+            top_p=0.95,
+            max_tokens=2048,
+            json_mode=True,
         ),
     }
