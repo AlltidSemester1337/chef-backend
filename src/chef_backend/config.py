@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     # not count: background AI purposes and text-to-speech.
     daily_ai_uncounted_call_limit: int = 50
     daily_tts_char_limit: int = 25_000
+    daily_image_limit: int = 20
+
+    # Recipe images: generated with Vertex AI (ADC) and stored in Cloud Storage for
+    # Firebase. The bucket name is project-specific config, so it has no default.
+    storage_bucket: str | None = None
+    vertex_location: str = "global"
+    image_model: str = "gemini-2.5-flash-image"
 
     # Tracing to Arize Phoenix (OTLP over HTTP). Optional: without endpoint and key
     # the backend runs untraced. The endpoint is project-specific config, not a secret.

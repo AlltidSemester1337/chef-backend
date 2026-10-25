@@ -24,6 +24,7 @@ RETENTION = timedelta(days=30)
 class UsageKind(StrEnum):
     AI_UNCOUNTED_CALLS = "ai_uncounted_calls"
     TTS_CHARS = "tts_chars"
+    IMAGES = "images"
 
 
 class BudgetDecision(StrEnum):

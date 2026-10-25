@@ -39,7 +39,11 @@ def test_only_interactive_purposes_count_toward_quota() -> None:
 def test_json_purposes_use_json_mode() -> None:
     json_mode = {p for p, c in build_purposes("x").items() if c.json_mode}
 
-    assert json_mode == {Purpose.DERIVE_RECIPE_JSON, Purpose.EXTRACT_PREFERENCES}
+    assert json_mode == {
+        Purpose.DERIVE_RECIPE_JSON,
+        Purpose.EXTRACT_PREFERENCES,
+        Purpose.COOKING_RESOURCES,
+    }
 
 
 def test_get_purposes_reads_the_chat_prompt_file(

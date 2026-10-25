@@ -18,7 +18,12 @@ from chef_backend.ai.dependencies import (
     get_quota_store,
     get_today,
 )
-from chef_backend.ai.purposes import CONVERSATION_PURPOSES, Purpose, build_purposes
+from chef_backend.ai.purposes import (
+    CONVERSATION_PURPOSES,
+    INTERNAL_PURPOSES,
+    Purpose,
+    build_purposes,
+)
 from chef_backend.auth import AuthenticatedUser, Claims, get_current_user, get_token_verifier
 from chef_backend.budget import UsageKind
 from chef_backend.main import create_app
@@ -115,7 +120,7 @@ def test_returns_the_model_reply(client: TestClient) -> None:
     assert response.json() == {"content": "Gör en carbonara."}
 
 
-@pytest.mark.parametrize("purpose", list(Purpose))
+@pytest.mark.parametrize("purpose", sorted(set(Purpose) - INTERNAL_PURPOSES))
 def test_calls_the_model_with_the_server_side_config(
     client: TestClient, world: World, purpose: Purpose
 ) -> None:
@@ -136,6 +141,17 @@ def test_calls_the_model_with_the_server_side_config(
     assert call.config == PURPOSES[purpose]
     assert [m.model_dump() for m in call.messages] == messages
     assert call.user_id == VERIFIED.uid
+
+
+@pytest.mark.parametrize("purpose", sorted(INTERNAL_PURPOSES))
+def test_internal_purposes_are_not_available_here(
+    client: TestClient, world: World, purpose: Purpose
+) -> None:
+    response = client.post(URL, json=body(purpose.value))
+
+    assert response.status_code == 422
+    assert world.chat.calls == []
+    assert world.budget.usage == {}
 
 
 def test_the_model_gets_the_normalized_conversation(client: TestClient, world: World) -> None:

@@ -65,3 +65,21 @@ def test_settings_from_dotenv_are_overridden() -> None:
 
     assert settings.gcp_project_id == ""
     assert settings.environment == "test"
+
+
+def test_storage_client_cannot_find_credentials() -> None:
+    from google.cloud import storage  # pyright: ignore[reportMissingTypeStubs]
+
+    with pytest.raises(RuntimeError, match=NO_CREDENTIALS):
+        storage.Client(project="my-real-project")
+
+
+def test_vertex_calls_cannot_find_credentials() -> None:
+    from google import genai
+
+    # genai loads credentials lazily, so the guard fires on the first call, before
+    # any request leaves the process.
+    client = genai.Client(vertexai=True, project="my-real-project", location="global")
+
+    with pytest.raises(RuntimeError, match=NO_CREDENTIALS):
+        client.models.generate_content(model="gemini-2.5-flash-image", contents="x")

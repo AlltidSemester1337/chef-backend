@@ -10,7 +10,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from chef_backend.ai.purposes import CONVERSATION_PURPOSES, Purpose
+from chef_backend.ai.purposes import CONVERSATION_PURPOSES, INTERNAL_PURPOSES, Purpose
 
 MAX_MESSAGES = 100
 MAX_MESSAGE_CHARS = 100_000
@@ -64,6 +64,8 @@ class CompletionRequest(BaseModel):
 
     @model_validator(mode="after")
     def check_size_and_shape(self) -> Self:
+        if self.purpose in INTERNAL_PURPOSES:
+            raise ValueError("this purpose has its own endpoint")
         if sum(len(message.content) for message in self.messages) > MAX_TOTAL_CHARS:
             raise ValueError(f"messages exceed {MAX_TOTAL_CHARS} characters in total")
         # Validation runs before the endpoint, so a bad shape costs no quota or budget.

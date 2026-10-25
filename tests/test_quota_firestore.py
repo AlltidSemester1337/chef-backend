@@ -64,3 +64,17 @@ def test_concurrent_increments_are_never_lost_or_duplicated(client: firestore.Cl
     assert sorted(results) == list(range(1, len(results) + 1))
     stored = client.collection(USERS_COLLECTION).document(uid).get().to_dict() or {}
     assert stored[INTERACTION_COUNT_FIELD] == len(results)
+
+
+def test_preferences_reader_returns_the_summary(client: firestore.Client) -> None:
+    from chef_backend.cooking_resources import FirestorePreferencesReader
+
+    uid = f"user-{uuid.uuid4()}"
+    users = client.collection(USERS_COLLECTION)
+    users.document(uid).set({"preferences": {"summary": "vegetarian"}})
+    users.document(f"{uid}-empty").set({"preferences": {"summary": "  "}})
+    reader = FirestorePreferencesReader(client)
+
+    assert reader.load_summary(uid) == "vegetarian"
+    assert reader.load_summary(f"{uid}-empty") is None
+    assert reader.load_summary(f"{uid}-missing") is None
