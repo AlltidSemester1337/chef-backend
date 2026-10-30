@@ -13,6 +13,7 @@ dependencies = [
     "google-cloud-texttospeech>=2.38.0",
     "google-genai>=2.33.0",
     "httpx>=0.28.1",
+    "mcp>=1.30,<2",
     "opentelemetry-exporter-otlp-proto-http>=1.45.1",
     "opentelemetry-sdk>=1.45.1",
     "pillow>=13.0.0",
@@ -41,8 +42,8 @@ target-version = "py313"
 select = ["E", "F", "I", "B", "UP", "S", "ASYNC", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
-# S105/S106: tests use obviously fake token strings.
-"tests/**" = ["S101", "S105", "S106"]
+# S105/S106/S107: tests use obviously fake token strings.
+"tests/**" = ["S101", "S105", "S106", "S107"]
 
 [tool.pyright]
 include = ["src", "tests"]

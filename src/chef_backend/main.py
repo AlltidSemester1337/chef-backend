@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI
+from mcp.server.auth.provider import TokenVerifier as McpTokenVerifier
 
 from chef_backend import __doc__ as description
 from chef_backend.ai.dependencies import (
@@ -18,8 +19,11 @@ from chef_backend.cooking_resources import get_preferences_reader
 from chef_backend.cooking_resources import router as cooking_resources_router
 from chef_backend.images import get_image_generator, get_image_store
 from chef_backend.images import router as images_router
+from chef_backend.mcp_server.auth import get_mcp_token_verifier
+from chef_backend.mcp_server.server import build_mcp
 from chef_backend.recipes.routes import get_recipe_service
 from chef_backend.recipes.routes import router as recipes_router
+from chef_backend.recipes.service import RecipeService
 from chef_backend.telemetry import shutdown_tracing
 from chef_backend.tts import get_speech_synthesizer
 from chef_backend.tts import router as tts_router
@@ -50,7 +54,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
         if settings.environment == "prod":
             check_production_config()
-        yield
+        # A mounted app's own lifespan never runs, so the MCP session manager starts here.
+        async with mcp.session_manager.run():
+            yield
         shutdown_tracing()
 
     app = FastAPI(
@@ -73,6 +79,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(images_router)
     app.include_router(cooking_resources_router)
     app.include_router(recipes_router)
+
+    def resolve_token_verifier() -> McpTokenVerifier:
+        return app.dependency_overrides.get(get_mcp_token_verifier, get_mcp_token_verifier)()
+
+    def resolve_recipe_service() -> RecipeService:
+        return app.dependency_overrides.get(get_recipe_service, get_recipe_service)()
+
+    # MCP is not FastAPI-routed, but resolving through dependency_overrides lets tests
+    # swap its collaborators the same way as for the HTTP routes.
+    mcp = build_mcp(settings.public_base_url, resolve_token_verifier, resolve_recipe_service)
+    # The router's fallback for paths no route matches: /mcp and the OAuth metadata under
+    # /.well-known must sit at the top level, and every FastAPI route (also ones added
+    # later) still matches first. The MCP app answers 404 for anything else.
+    app.router.default = mcp.streamable_http_app()
+    app.state.mcp = mcp
     return app
 
 

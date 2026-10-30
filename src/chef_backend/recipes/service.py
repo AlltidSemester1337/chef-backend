@@ -14,6 +14,10 @@ from chef_backend.recipes.models import Recipe, RecipeVariant
 from chef_backend.recipes.repository import RecipeRepository
 from chef_backend.recipes.search import search_recipes
 
+# Search bounds, the same for the HTTP API and the MCP tools.
+MAX_SEARCH_LIMIT = 50
+MAX_QUERY_CHARS = 200
+
 _OLDEST = datetime.min.replace(tzinfo=UTC)
 # Firestore auto-ids and the migrated RTDB push ids. Anything else, in particular a
 # "/", would make document() address a different path than a recipe.
