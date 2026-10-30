@@ -18,6 +18,8 @@ from chef_backend.cooking_resources import get_preferences_reader
 from chef_backend.cooking_resources import router as cooking_resources_router
 from chef_backend.images import get_image_generator, get_image_store
 from chef_backend.images import router as images_router
+from chef_backend.recipes.routes import get_recipe_service
+from chef_backend.recipes.routes import router as recipes_router
 from chef_backend.telemetry import shutdown_tracing
 from chef_backend.tts import get_speech_synthesizer
 from chef_backend.tts import router as tts_router
@@ -37,6 +39,7 @@ def check_production_config() -> None:
     get_image_generator()
     get_image_store()
     get_preferences_reader()
+    get_recipe_service()
     get_token_verifier()
 
 
@@ -69,6 +72,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(tts_router)
     app.include_router(images_router)
     app.include_router(cooking_resources_router)
+    app.include_router(recipes_router)
     return app
 
 
