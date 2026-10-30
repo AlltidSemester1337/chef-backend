@@ -62,7 +62,12 @@ def build_mcp(
     host = urlsplit(base_url).netloc
     mcp = _ChefMCP(
         name="Chef",
-        instructions="Search and read the user's recipes and the community's shared recipes.",
+        instructions=(
+            "Chef holds the user's recipes and recipes shared by the community. "
+            "Recipes are stored in English: translate search words to English, but answer "
+            "the user in their own language. Typical flow: search_recipes to find "
+            "candidates, then get_recipe for the one or few recipes you need in full."
+        ),
         # Cloud Run scales to zero and may run two instances: no server-side sessions.
         stateless_http=True,
         json_response=True,

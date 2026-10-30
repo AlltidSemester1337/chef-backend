@@ -29,7 +29,7 @@ READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
 RecipeId = Annotated[
     str,
     Field(
-        description="recipe id value to be fetched, returned from search_recipes() tool.",
+        description="The id of a recipe, as returned by search_recipes.",
         min_length=1,
     ),
 ]
@@ -39,8 +39,10 @@ def register_tools(mcp: FastMCP, recipe_service: Callable[[], RecipeService]) ->
     """Add the recipe tools to `mcp`. Call `recipe_service()` inside a tool, per call."""
 
     @mcp.tool(
-        description="Get recipe details by passing reference by id. "
-        "Use when details for a recipe is required.",
+        description="Get one recipe in full: ingredients with quantity and unit, "
+        "step-by-step instructions, tips, servings and nutrients per serving. "
+        "Use the id from search_recipes. 'recipe_not_found' means the id does not exist "
+        "or is not visible to the user; do not retry it.",
         annotations=READ_ONLY,
     )
     def get_recipe(recipe_id: RecipeId) -> RecipeView:
@@ -51,19 +53,20 @@ def register_tools(mcp: FastMCP, recipe_service: Callable[[], RecipeService]) ->
         return RecipeView.of(recipe=recipe, viewer_uid=uid)
 
     @mcp.tool(
-        description="Search recipes by given search query to return list "
-        "of matching recipe summaries. "
-        "Use whenever searching recipes is required. "
-        "For recipe details use get_recipe() tool.",
+        description="Find recipes by keywords. Returns short summaries (title, summary, "
+        "tags, times, isMine, isFavourite = shared with the community), newest first. "
+        "Every word must occur in the title, a tag or an ingredient name; partial words "
+        "match ('chick' finds 'chickpeas'). Use 1-3 specific keywords such as an "
+        "ingredient, dish or tag ('chicken curry', 'vegetarian'), not a sentence. If "
+        "nothing matches, retry with fewer or different words before concluding there "
+        "is no such recipe. Use get_recipe for ingredients and instructions.",
         annotations=READ_ONLY,
     )
     def search_recipes(
         query: Annotated[
             str,
             Field(
-                description="search query value in english, "
-                "each word must exist in recipe tags, ingredients or title. "
-                "An empty query lists every recipe in the scope.",
+                description="1-3 English keywords. Empty lists every recipe in the scope.",
                 max_length=MAX_QUERY_CHARS,
             ),
         ] = "",
@@ -77,7 +80,13 @@ def register_tools(mcp: FastMCP, recipe_service: Callable[[], RecipeService]) ->
             ),
         ] = "all",
         limit: Annotated[
-            int, Field(description="maximum number of recipes returned", ge=1, le=MAX_SEARCH_LIMIT)
+            int,
+            Field(
+                description="Maximum number of recipes returned. Keep it small: every hit "
+                "takes up context.",
+                ge=1,
+                le=MAX_SEARCH_LIMIT,
+            ),
         ] = 10,
     ) -> RecipeSearchResponse:
         uid = current_uid()
@@ -86,9 +95,9 @@ def register_tools(mcp: FastMCP, recipe_service: Callable[[], RecipeService]) ->
         return RecipeSearchResponse(recipes=recipes_view)
 
     @mcp.tool(
-        description="List variants for a given recipe by reference id. "
-        "Variant means alternate version of original recipe for example vegan. "
-        "Use whenever fetching recipe variant details is required.",
+        description="List the user's saved variants of a recipe, oldest first: adapted "
+        "versions such as milder, vegan or a half batch, each with its own ingredients "
+        "and instructions. Often empty.",
         annotations=READ_ONLY,
     )
     def list_recipe_variants(recipe_id: RecipeId) -> VariantsResponse:
