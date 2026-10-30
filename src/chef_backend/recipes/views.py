@@ -110,6 +110,14 @@ class VariantView(_View):
         )
 
 
+class RecipeSearchResponse(_View):
+    recipes: list[RecipeSummaryView]
+
+
+class VariantsResponse(_View):
+    variants: list[VariantView]
+
+
 def _summary_fields(recipe: Recipe, viewer_uid: str) -> dict[str, object]:
     return {
         "id": recipe.id,

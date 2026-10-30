@@ -15,8 +15,8 @@ from fastapi.testclient import TestClient
 from chef_backend.auth import AuthenticatedUser, Claims, get_current_user, get_token_verifier
 from chef_backend.main import create_app
 from chef_backend.recipes.models import Ingredient, Recipe, RecipeVariant
-from chef_backend.recipes.routes import MAX_LIMIT, MAX_QUERY_CHARS, get_recipe_service
-from chef_backend.recipes.service import RecipeService
+from chef_backend.recipes.routes import get_recipe_service
+from chef_backend.recipes.service import MAX_QUERY_CHARS, MAX_SEARCH_LIMIT, RecipeService
 
 ME = AuthenticatedUser(uid="me-uid", email="cook@example.com", email_verified=True)
 OTHER_UID = "other-secret-uid"
@@ -127,7 +127,7 @@ def test_search_passes_query_scope_and_limit(client: TestClient) -> None:
     [
         {"scope": "everyone"},
         {"limit": 0},
-        {"limit": MAX_LIMIT + 1},
+        {"limit": MAX_SEARCH_LIMIT + 1},
         {"limit": "many"},
         {"q": "x" * (MAX_QUERY_CHARS + 1)},
     ],

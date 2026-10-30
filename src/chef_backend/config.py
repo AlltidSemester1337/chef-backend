@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     vertex_location: str = "global"
     image_model: str = "gemini-2.5-flash-image"
 
+    # Public base URL of this service: the MCP resource and OAuth issuer identifier.
+    # Project-specific (the Cloud Run URL), so the default is for local runs only.
+    public_base_url: str = "http://localhost:8080"
+
     # Tracing to Arize Phoenix (OTLP over HTTP). Optional: without endpoint and key
     # the backend runs untraced. The endpoint is project-specific config, not a secret.
     phoenix_endpoint: str | None = None

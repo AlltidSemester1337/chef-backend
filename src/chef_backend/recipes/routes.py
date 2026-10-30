@@ -8,30 +8,25 @@ from functools import lru_cache
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
 
 from chef_backend.ai.dependencies import get_firestore_client
 from chef_backend.auth import AuthenticatedUser, get_current_user
 from chef_backend.recipes.repository import FirestoreRecipeRepository
-from chef_backend.recipes.service import RecipeService, Scope
-from chef_backend.recipes.views import RecipeSummaryView, RecipeView, VariantView
+from chef_backend.recipes.service import MAX_QUERY_CHARS, MAX_SEARCH_LIMIT, RecipeService, Scope
+from chef_backend.recipes.views import (
+    RecipeSearchResponse,
+    RecipeSummaryView,
+    RecipeView,
+    VariantsResponse,
+    VariantView,
+)
 
 DEFAULT_LIMIT = 20
-MAX_LIMIT = 50
-MAX_QUERY_CHARS = 200
 
 
 @lru_cache
 def get_recipe_service() -> RecipeService:
     return RecipeService(FirestoreRecipeRepository(get_firestore_client()))
-
-
-class RecipeSearchResponse(BaseModel):
-    recipes: list[RecipeSummaryView]
-
-
-class VariantsResponse(BaseModel):
-    variants: list[VariantView]
 
 
 router = APIRouter(prefix="/v1/recipes", tags=["recipes"])
@@ -50,7 +45,7 @@ def search_recipes(
     service: Service,
     q: Annotated[str, Query(max_length=MAX_QUERY_CHARS)] = "",
     scope: Scope = Scope.ALL,
-    limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
+    limit: Annotated[int, Query(ge=1, le=MAX_SEARCH_LIMIT)] = DEFAULT_LIMIT,
 ) -> RecipeSearchResponse:
     """Search the caller's own and the community's recipes, newest first."""
     recipes = service.search(user.uid, q, scope, limit)
