@@ -8,7 +8,7 @@ token's `subject` is the Firebase uid of the user who signed in and consented.
 from functools import lru_cache
 
 from mcp.server.auth.middleware.auth_context import get_access_token
-from mcp.server.auth.provider import AccessToken, TokenVerifier
+from mcp.server.auth.provider import ProviderTokenVerifier, TokenVerifier
 
 RECIPES_READ_SCOPE = "recipes:read"
 
@@ -25,13 +25,9 @@ def current_uid() -> str:
     return token.subject
 
 
-class RejectAllTokenVerifier:
-    """Until the authorization server exists (M2), no token is valid: /mcp is closed."""
-
-    async def verify_token(self, token: str) -> AccessToken | None:
-        return None
-
-
 @lru_cache
 def get_mcp_token_verifier() -> TokenVerifier:
-    return RejectAllTokenVerifier()
+    """Access tokens are the ones our own authorization server issued (oauth.py)."""
+    from chef_backend.mcp_server.oauth import get_oauth_provider
+
+    return ProviderTokenVerifier(get_oauth_provider())

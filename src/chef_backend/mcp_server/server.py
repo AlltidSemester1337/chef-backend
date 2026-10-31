@@ -5,15 +5,25 @@ from collections.abc import Callable, Sequence
 from typing import Any
 from urllib.parse import urlsplit
 
-from mcp.server.auth.provider import AccessToken, TokenVerifier
-from mcp.server.auth.settings import AuthSettings
+from mcp.server.auth.provider import (
+    AccessToken,
+    AuthorizationCode,
+    AuthorizationParams,
+    RefreshToken,
+    TokenVerifier,
+)
+from mcp.server.auth.routes import create_auth_routes
+from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from mcp.types import ContentBlock
 from pydantic import AnyHttpUrl, ValidationError
+from starlette.routing import Route
 
 from chef_backend.mcp_server.auth import RECIPES_READ_SCOPE
+from chef_backend.mcp_server.oauth import ChefOAuthProvider
 from chef_backend.mcp_server.tools import register_tools
 from chef_backend.recipes.service import RecipeService
 
@@ -52,6 +62,70 @@ class _LazyTokenVerifier:
 
     async def verify_token(self, token: str) -> AccessToken | None:
         return await self._get_verifier().verify_token(token)
+
+
+class _LazyOAuthProvider:
+    """Resolves the provider per call, so tests can swap it after the app is built."""
+
+    def __init__(self, get_provider: Callable[[], ChefOAuthProvider]) -> None:
+        self._get = get_provider
+
+    async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
+        return await self._get().get_client(client_id)
+
+    async def register_client(self, client_info: OAuthClientInformationFull) -> None:
+        await self._get().register_client(client_info)
+
+    async def authorize(
+        self, client: OAuthClientInformationFull, params: AuthorizationParams
+    ) -> str:
+        return await self._get().authorize(client, params)
+
+    async def load_authorization_code(
+        self, client: OAuthClientInformationFull, authorization_code: str
+    ) -> AuthorizationCode | None:
+        return await self._get().load_authorization_code(client, authorization_code)
+
+    async def exchange_authorization_code(
+        self, client: OAuthClientInformationFull, authorization_code: AuthorizationCode
+    ) -> OAuthToken:
+        return await self._get().exchange_authorization_code(client, authorization_code)
+
+    async def load_refresh_token(
+        self, client: OAuthClientInformationFull, refresh_token: str
+    ) -> RefreshToken | None:
+        return await self._get().load_refresh_token(client, refresh_token)
+
+    async def exchange_refresh_token(
+        self, client: OAuthClientInformationFull, refresh_token: RefreshToken, scopes: list[str]
+    ) -> OAuthToken:
+        return await self._get().exchange_refresh_token(client, refresh_token, scopes)
+
+    async def load_access_token(self, token: str) -> AccessToken | None:
+        return await self._get().load_access_token(token)
+
+    async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
+        await self._get().revoke_token(token)
+
+
+def build_oauth_routes(
+    base_url: str, oauth_provider: Callable[[], ChefOAuthProvider]
+) -> list[Route]:
+    """The authorization server endpoints: metadata, /authorize, /token, /register, /revoke.
+
+    Registration is open, as the MCP spec expects, but limited to allowlisted
+    redirect URIs (ChefOAuthProvider.register_client).
+    """
+    return create_auth_routes(
+        provider=_LazyOAuthProvider(oauth_provider),
+        issuer_url=AnyHttpUrl(base_url),
+        client_registration_options=ClientRegistrationOptions(
+            enabled=True,
+            valid_scopes=[RECIPES_READ_SCOPE],
+            default_scopes=[RECIPES_READ_SCOPE],
+        ),
+        revocation_options=RevocationOptions(enabled=True),
+    )
 
 
 def build_mcp(
