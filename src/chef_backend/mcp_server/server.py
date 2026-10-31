@@ -20,7 +20,9 @@ from mcp.server.transport_security import TransportSecuritySettings
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from mcp.types import ContentBlock
 from pydantic import AnyHttpUrl, ValidationError
+from starlette.responses import Response
 from starlette.routing import Route
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from chef_backend.mcp_server.auth import RECIPES_READ_SCOPE
 from chef_backend.mcp_server.oauth import ChefOAuthProvider
@@ -106,6 +108,30 @@ class _LazyOAuthProvider:
 
     async def revoke_token(self, token: AccessToken | RefreshToken) -> None:
         await self._get().revoke_token(token)
+
+
+class StatelessOnly:
+    """Answers GET and DELETE on /mcp with 405, as the transport spec allows a server to.
+
+    A stateless server can never send anything on the GET event stream, but the SDK
+    would hold it open until Cloud Run's request timeout. An open request keeps the
+    instance billed and stops it scaling to zero for as long as a client is connected.
+    DELETE ends a session, and there are none. Everything else goes to the MCP app.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self._app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if (
+            scope["type"] == "http"
+            and scope["path"] == MCP_PATH
+            and scope["method"] in ("GET", "DELETE")
+        ):
+            response = Response(status_code=405, headers={"Allow": "POST"})
+            await response(scope, receive, send)
+            return
+        await self._app(scope, receive, send)
 
 
 def build_oauth_routes(
