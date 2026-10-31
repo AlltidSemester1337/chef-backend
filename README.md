@@ -36,6 +36,14 @@ No secrets or private configuration are stored in this repository. Secrets are k
 Google Secret Manager and Google APIs are reached via Application Default Credentials.
 CI runs [gitleaks](https://github.com/gitleaks/gitleaks) on every push.
 
+## Releases
+1.0-alpha: Backend API replacing direct integration from Android app, first MVP MCP server release, simple read MCP server read tools for recipes
+
+## Demos / how to use
+
+[youtube demos](https://www.youtube.com/playlist?list=PL3z3ETRVg-c4teb_hZ8OzLwx7ySJKoB1Q)
+
+
 ## License
 
 Apache-2.0
