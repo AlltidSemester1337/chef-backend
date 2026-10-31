@@ -118,6 +118,7 @@ def test_search_hits_are_summaries_in_camel_case(client: TestClient) -> None:
 
 def test_search_passes_query_scope_and_limit(client: TestClient) -> None:
     assert recipe_ids(client.get("/v1/recipes", params={"scope": "community"})) == ["theirs-shared"]
+    assert recipe_ids(client.get("/v1/recipes", params={"scope": "others"})) == ["theirs-shared"]
     assert recipe_ids(client.get("/v1/recipes", params={"q": "title mine"})) == ["mine"]
     assert recipe_ids(client.get("/v1/recipes", params={"limit": 1})) == ["theirs-shared"]
 

@@ -26,7 +26,10 @@ _RECIPE_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
 
 class Scope(StrEnum):
     MINE = "mine"
+    # Everything shared with the community, the user's own shared recipes included.
     COMMUNITY = "community"
+    # Shared recipes by anyone but the user (including orphaned ones).
+    OTHERS = "others"
     ALL = "all"
 
 
@@ -55,6 +58,8 @@ class RecipeService:
                 return self._repository.list_by_owner(uid)
             case Scope.COMMUNITY:
                 return self._repository.list_community()
+            case Scope.OTHERS:
+                return [r for r in self._repository.list_community() if r.uid != uid]
             case Scope.ALL:
                 # The user's own favourites are in both lists: keep one copy of each.
                 mine = self._repository.list_by_owner(uid)

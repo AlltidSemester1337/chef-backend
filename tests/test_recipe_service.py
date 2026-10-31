@@ -173,6 +173,14 @@ def test_scope_community_searches_shared_recipes_including_own(
     assert searches[0]["ids"] == ["orphan-shared", "my-shared", "others-shared"]
 
 
+def test_scope_others_searches_shared_recipes_by_anyone_else(
+    service: RecipeService, searches: list[dict[str, Any]]
+) -> None:
+    service.search(ME, "", Scope.OTHERS, limit=10)
+
+    assert searches[0]["ids"] == ["orphan-shared", "others-shared"]
+
+
 def test_scope_all_merges_both_newest_first_without_duplicates(
     service: RecipeService, searches: list[dict[str, Any]]
 ) -> None:
