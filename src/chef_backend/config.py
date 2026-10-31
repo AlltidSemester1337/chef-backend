@@ -41,6 +41,18 @@ class Settings(BaseSettings):
     # Project-specific (the Cloud Run URL), so the default is for local runs only.
     public_base_url: str = "http://localhost:8080"
 
+    # MCP sign-in. Registered OAuth clients may only redirect to these URIs (plus http
+    # loopback for local clients such as Claude Code), so a self-registered client
+    # cannot have a user's authorization code sent to its own site.
+    mcp_redirect_uri_allowlist: list[str] = [
+        "https://claude.ai/api/mcp/auth_callback",
+        "https://claude.com/api/mcp/auth_callback",
+    ]
+    # The Firebase web app the login page signs in with. Public values (they ship in
+    # every web page) but project-specific, so they come from the environment.
+    firebase_web_api_key: str | None = None
+    firebase_web_app_id: str | None = None
+
     # Tracing to Arize Phoenix (OTLP over HTTP). Optional: without endpoint and key
     # the backend runs untraced. The endpoint is project-specific config, not a secret.
     phoenix_endpoint: str | None = None

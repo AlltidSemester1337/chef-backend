@@ -20,7 +20,9 @@ from chef_backend.cooking_resources import router as cooking_resources_router
 from chef_backend.images import get_image_generator, get_image_store
 from chef_backend.images import router as images_router
 from chef_backend.mcp_server.auth import get_mcp_token_verifier
-from chef_backend.mcp_server.server import build_mcp
+from chef_backend.mcp_server.login import router as mcp_login_router
+from chef_backend.mcp_server.oauth import ChefOAuthProvider, get_oauth_provider
+from chef_backend.mcp_server.server import build_mcp, build_oauth_routes
 from chef_backend.recipes.routes import get_recipe_service
 from chef_backend.recipes.routes import router as recipes_router
 from chef_backend.recipes.service import RecipeService
@@ -44,6 +46,7 @@ def check_production_config() -> None:
     get_image_store()
     get_preferences_reader()
     get_recipe_service()
+    get_oauth_provider()
     get_token_verifier()
 
 
@@ -85,6 +88,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def resolve_recipe_service() -> RecipeService:
         return app.dependency_overrides.get(get_recipe_service, get_recipe_service)()
+
+    def resolve_oauth_provider() -> ChefOAuthProvider:
+        return app.dependency_overrides.get(get_oauth_provider, get_oauth_provider)()
+
+    # The MCP authorization server: the SDK's OAuth endpoints and our login page.
+    app.router.routes.extend(build_oauth_routes(settings.public_base_url, resolve_oauth_provider))
+    app.include_router(mcp_login_router)
 
     # MCP is not FastAPI-routed, but resolving through dependency_overrides lets tests
     # swap its collaborators the same way as for the HTTP routes.

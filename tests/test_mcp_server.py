@@ -7,6 +7,7 @@ from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from mcp.server.auth.provider import ProviderTokenVerifier
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp_support import BASE_URL, RESOURCE, FakeMcpTokenVerifier, FakeRecipeRepository, McpClient
@@ -93,10 +94,19 @@ def test_an_unexpected_host_header_is_rejected(
     assert response.status_code == 421
 
 
-def test_without_overrides_every_token_is_rejected_until_the_oauth_server_exists() -> None:
-    app = create_app()
-    with TestClient(app, base_url=BASE_URL) as client:
-        assert McpClient(client, "any-token").post("tools/list").status_code == 401
+def test_in_production_access_tokens_are_checked_by_our_authorization_server(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = object()
+    monkeypatch.setattr("chef_backend.mcp_server.oauth.get_oauth_provider", lambda: provider)
+    get_mcp_token_verifier.cache_clear()
+    try:
+        verifier = get_mcp_token_verifier()
+    finally:
+        get_mcp_token_verifier.cache_clear()
+
+    assert isinstance(verifier, ProviderTokenVerifier)
+    assert verifier.provider is provider  # pyright: ignore[reportUnknownMemberType]
 
 
 def test_the_http_api_is_unaffected_and_unknown_paths_are_404(http: TestClient) -> None:
