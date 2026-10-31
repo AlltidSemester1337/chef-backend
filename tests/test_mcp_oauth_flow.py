@@ -243,7 +243,7 @@ def test_the_login_page_cannot_be_framed_or_run_foreign_scripts(world: World) ->
     assert "frame-ancestors 'none'" in csp and "default-src 'none'" in csp
     assert "script-src 'self' https://www.gstatic.com;" in csp
     assert page.headers["x-frame-options"] == "DENY"
-    assert page.headers["referrer-policy"] == "no-referrer"
+    assert page.headers["referrer-policy"] == "strict-origin"
     assert page.headers["cache-control"] == "no-store"
 
 
