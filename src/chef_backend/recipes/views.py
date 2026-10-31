@@ -12,6 +12,21 @@ from pydantic.alias_generators import to_camel
 
 from chef_backend.recipes.models import Difficulty, Ingredient, Recipe, RecipeVariant
 
+# Search hits carry a short summary: some older recipes have whole markdown sections
+# (yields, nutrition) in it, which would flood a list. The full text is in RecipeView.
+MAX_SUMMARY_CHARS = 200
+
+
+def short_summary(text: str, limit: int = MAX_SUMMARY_CHARS) -> str:
+    """Whitespace collapsed to single spaces, cut at a word boundary with an ellipsis."""
+    collapsed = " ".join(text.split())
+    if len(collapsed) <= limit:
+        return collapsed
+    cut = collapsed[: limit - 1]
+    if " " in cut:
+        cut = cut.rsplit(" ", 1)[0]
+    return cut.rstrip(" .,;:-") + "…"
+
 
 class _View(BaseModel):
     # camelCase on the wire, like the documents the apps already read.
@@ -31,7 +46,7 @@ class IngredientView(_View):
 
 
 class RecipeSummaryView(_View):
-    """A search hit: enough to pick a recipe, without the full text."""
+    """A search hit: enough to pick a recipe, without the full text (summary shortened)."""
 
     id: str
     title: str
@@ -48,7 +63,8 @@ class RecipeSummaryView(_View):
 
     @classmethod
     def of(cls, recipe: Recipe, viewer_uid: str) -> "RecipeSummaryView":
-        return cls.model_validate(_summary_fields(recipe, viewer_uid))
+        fields = _summary_fields(recipe, viewer_uid)
+        return cls.model_validate(fields | {"summary": short_summary(recipe.summary)})
 
 
 class RecipeView(RecipeSummaryView):
