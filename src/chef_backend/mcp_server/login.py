@@ -34,8 +34,10 @@ SECURITY_HEADERS = {
     ),
     "X-Frame-Options": "DENY",
     "X-Content-Type-Options": "nosniff",
-    # The URL carries the pending request id.
-    "Referrer-Policy": "no-referrer",
+    # The URL carries the pending request id, so only the origin may leave the page.
+    # Not no-referrer: the browser API key is restricted by referrer, and Firebase Auth
+    # rejects requests that carry none.
+    "Referrer-Policy": "strict-origin",
     "Cache-Control": "no-store",
 }
 
