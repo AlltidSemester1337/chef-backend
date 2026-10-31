@@ -2,6 +2,8 @@
 
 Three read-only tools on top of RecipeService:
 - search_recipes(query="", scope="all", limit=10) -> {"recipes": [summary, ...]}
+  scope: mine, community (all shared, own included), others (shared by anyone
+  else) or all (mine + community)
 - get_recipe(recipe_id) -> the full recipe
 - list_recipe_variants(recipe_id) -> {"variants": [variant, ...]}
 
@@ -22,6 +24,7 @@ from mcp_support import (
     FakeMcpTokenVerifier,
     FakeRecipeRepository,
     McpClient,
+    recipe,
 )
 
 from chef_backend.main import create_app
@@ -84,9 +87,17 @@ def test_search_parameters_have_defaults_and_bounds(mcp: McpClient) -> None:
     assert search["inputSchema"].get("required", []) == []
     assert properties["query"]["default"] == ""
     assert properties["scope"]["default"] == "all"
-    assert set(properties["scope"]["enum"]) == {"mine", "community", "all"}
+    assert set(properties["scope"]["enum"]) == {"mine", "community", "others", "all"}
     assert (properties["limit"]["default"], properties["limit"]["minimum"]) == (10, 1)
     assert properties["limit"]["maximum"] == 50
+
+
+def test_the_scope_description_explains_every_value(mcp: McpClient) -> None:
+    [search] = [t for t in mcp.list_tools() if t["name"] == "search_recipes"]
+    description = search["inputSchema"]["properties"]["scope"]["description"]
+
+    for value in ["mine", "community", "others", "all"]:
+        assert value in description, value
 
 
 def test_recipe_id_is_required(mcp: McpClient) -> None:
@@ -139,6 +150,29 @@ def test_search_acts_for_the_user_in_the_token(
     found = ok(other.call("search_recipes", scope="mine"))
 
     assert {r["id"] for r in found["recipes"]} == {"theirs-shared", "theirs-private"}
+
+
+@pytest.fixture
+def mcp_with_my_shared_recipe(verifier: FakeMcpTokenVerifier) -> Iterator[McpClient]:
+    """The user has also shared a recipe of their own with the community."""
+    repository = FakeRecipeRepository()
+    repository.recipes.append(recipe("mine-shared", ME, shared=True, day=4))
+    app = create_app()
+    app.dependency_overrides[get_mcp_token_verifier] = lambda: verifier
+    app.dependency_overrides[get_recipe_service] = lambda: RecipeService(repository)
+    with TestClient(app, base_url=BASE_URL) as http:
+        yield McpClient(http, verifier.issue())
+
+
+def test_others_is_the_community_without_the_users_own_recipes(
+    mcp_with_my_shared_recipe: McpClient,
+) -> None:
+    def ids(scope: str) -> list[str]:
+        result = ok(mcp_with_my_shared_recipe.call("search_recipes", scope=scope))
+        return [r["id"] for r in result["recipes"]]
+
+    assert ids("community") == ["mine-shared", "theirs-shared"]
+    assert ids("others") == ["theirs-shared"]
 
 
 # --- get_recipe ----------------------------------------------------------------

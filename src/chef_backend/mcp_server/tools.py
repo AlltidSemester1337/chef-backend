@@ -71,12 +71,17 @@ def register_tools(mcp: FastMCP, recipe_service: Callable[[], RecipeService]) ->
             ),
         ] = "",
         scope: Annotated[
-            Literal["mine", "community", "all"],
+            Literal["mine", "others", "community", "all"],
             Field(
-                description="scope for search, mine = the user's own recipes, "
-                "community = recipes shared with the community, "
-                "including the user's own shared ones, "
-                "all = mine + community"
+                description="Which recipes to search. "
+                "mine = the user's own recipes. "
+                "others = recipes shared by other users; "
+                "use this when the user asks for the "
+                "community's recipes or for inspiration from others. "
+                "community = every shared recipe, "
+                "the user's own shared ones included; use only "
+                "when they explicitly want their own shared recipes too. "
+                "all = mine + community (default)."
             ),
         ] = "all",
         limit: Annotated[
