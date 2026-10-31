@@ -159,3 +159,21 @@ def test_deliberate_tool_errors_and_validation_errors_reach_the_client(
 
     assert refused["isError"] is True and "recipe_not_found" in refused["content"][0]["text"]
     assert invalid["isError"] is True and "internal_error" not in invalid["content"][0]["text"]
+
+
+# --- Stateless transport -------------------------------------------------------------
+
+
+@pytest.mark.parametrize("method", ["GET", "DELETE"])
+def test_no_event_stream_or_session_end_is_offered(
+    http: TestClient, verifier: FakeMcpTokenVerifier, method: str
+) -> None:
+    # An open GET stream would keep the Cloud Run instance busy (and billed) forever.
+    response = http.request(
+        method,
+        "/mcp",
+        headers={"Authorization": f"Bearer {verifier.issue()}", "Accept": "text/event-stream"},
+    )
+
+    assert response.status_code == 405
+    assert response.headers["allow"] == "POST"
