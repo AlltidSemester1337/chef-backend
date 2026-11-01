@@ -9,12 +9,12 @@ so those are part of the interface, not decoration.
 from collections.abc import Callable
 from typing import Annotated, Literal
 
-from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from chef_backend.mcp_server.auth import current_uid
+from chef_backend.mcp_server.base import ChefMCP
 from chef_backend.recipes.service import MAX_QUERY_CHARS, MAX_SEARCH_LIMIT, RecipeService, Scope
 from chef_backend.recipes.views import (
     RecipeSearchResponse,
@@ -35,7 +35,7 @@ RecipeId = Annotated[
 ]
 
 
-def register_tools(mcp: FastMCP, recipe_service: Callable[[], RecipeService]) -> None:
+def register_tools(mcp: ChefMCP, recipe_service: Callable[[], RecipeService]) -> None:
     """Add the recipe tools to `mcp`. Call `recipe_service()` inside a tool, per call."""
 
     @mcp.tool(
