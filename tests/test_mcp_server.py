@@ -9,11 +9,14 @@ import pytest
 from fastapi.testclient import TestClient
 from mcp.server.auth.provider import ProviderTokenVerifier
 from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.fastmcp.exceptions import ResourceError, ToolError
+from mcp.types import Resource
 from mcp_support import BASE_URL, RESOURCE, FakeMcpTokenVerifier, FakeRecipeRepository, McpClient
+from pydantic import AnyUrl
 
 from chef_backend.main import create_app
-from chef_backend.mcp_server.auth import get_mcp_token_verifier
+from chef_backend.mcp_server.auth import current_uid, get_mcp_token_verifier
+from chef_backend.mcp_server.base import ChefMCP
 from chef_backend.recipes.routes import get_recipe_service
 from chef_backend.recipes.service import RecipeService
 
@@ -177,3 +180,66 @@ def test_no_event_stream_or_session_end_is_offered(
 
     assert response.status_code == 405
     assert response.headers["allow"] == "POST"
+
+
+# --- Resources -----------------------------------------------------------------------
+
+
+@pytest.fixture
+def app_with_test_resources(verifier: FakeMcpTokenVerifier) -> Iterator[McpClient]:
+    """The real app plus throwaway resources, independent of the recipe resources."""
+    app = create_app()
+    app.dependency_overrides[get_mcp_token_verifier] = lambda: verifier
+    mcp: ChefMCP = app.state.mcp
+
+    @mcp.resource("test://crash/{name}")
+    def crash(name: str) -> str:
+        raise RuntimeError("projects/secret-project/databases/(default) detail")
+
+    @mcp.resource("test://refuse/{name}")
+    def refuse(name: str) -> str:
+        raise ResourceError("recipe_not_found")
+
+    @mcp.resource_lister()
+    def per_user() -> list[Resource]:
+        return [Resource(uri=AnyUrl(f"test://user/{current_uid()}"), name="mine")]
+
+    with TestClient(app, base_url=BASE_URL) as client:
+        yield McpClient(client, verifier.issue())
+
+
+def test_resource_listers_add_resources_for_the_current_user(
+    app_with_test_resources: McpClient,
+) -> None:
+    uris = [r["uri"] for r in app_with_test_resources.list_resources()]
+
+    assert "test://user/me-uid" in uris
+
+
+def test_a_failing_lister_does_not_break_the_list(verifier: FakeMcpTokenVerifier) -> None:
+    app = create_app()
+    app.dependency_overrides[get_mcp_token_verifier] = lambda: verifier
+    mcp: ChefMCP = app.state.mcp
+
+    @mcp.resource_lister()
+    def broken() -> list[Resource]:
+        raise RuntimeError("boom")
+
+    with TestClient(app, base_url=BASE_URL) as client:
+        assert isinstance(McpClient(client, verifier.issue()).list_resources(), list)
+
+
+def test_unexpected_resource_failures_are_internal_error_without_details(
+    app_with_test_resources: McpClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    response = app_with_test_resources.read("test://crash/x")
+
+    assert response["error"]["message"] == "internal_error"
+    assert "secret-project" in caplog.text  # logged for us, not sent to the client
+
+
+def test_deliberate_resource_errors_and_unknown_uris_reach_the_client(
+    app_with_test_resources: McpClient,
+) -> None:
+    assert app_with_test_resources.read("test://refuse/x")["error"]["message"] == "recipe_not_found"
+    assert app_with_test_resources.read("nope://x")["error"]["message"] == "unknown_resource"

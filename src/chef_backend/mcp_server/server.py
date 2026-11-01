@@ -1,8 +1,6 @@
 """Builds the FastMCP server and its ASGI app, mounted into the FastAPI app."""
 
-import logging
-from collections.abc import Callable, Sequence
-from typing import Any
+from collections.abc import Callable
 from urllib.parse import urlsplit
 
 from mcp.server.auth.provider import (
@@ -14,46 +12,21 @@ from mcp.server.auth.provider import (
 )
 from mcp.server.auth.routes import create_auth_routes
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
-from mcp.types import ContentBlock
-from pydantic import AnyHttpUrl, ValidationError
+from pydantic import AnyHttpUrl
 from starlette.responses import Response
 from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from chef_backend.mcp_server.auth import RECIPES_READ_SCOPE
+from chef_backend.mcp_server.base import ChefMCP
 from chef_backend.mcp_server.oauth import ChefOAuthProvider
+from chef_backend.mcp_server.resources import register_resources
 from chef_backend.mcp_server.tools import register_tools
 from chef_backend.recipes.service import RecipeService
 
-logger = logging.getLogger(__name__)
-
 MCP_PATH = "/mcp"
-INTERNAL_ERROR = "internal_error"
-
-
-class _ChefMCP(FastMCP):
-    """FastMCP that does not hand internal error messages to the client.
-
-    FastMCP turns every exception in a tool into a tool error carrying its message,
-    which could expose infrastructure details. Errors a tool raises on purpose
-    (ToolError) and argument validation errors (about the client's own input) pass
-    through; anything else is logged here and reported as "internal_error".
-    """
-
-    async def call_tool(
-        self, name: str, arguments: dict[str, Any]
-    ) -> Sequence[ContentBlock] | dict[str, Any]:
-        try:
-            return await super().call_tool(name, arguments)
-        except ToolError as error:
-            if error.__cause__ is None or isinstance(error.__cause__, ToolError | ValidationError):
-                raise
-            logger.error("MCP tool %s failed", name, exc_info=error.__cause__)
-            raise ToolError(INTERNAL_ERROR) from None
 
 
 class _LazyTokenVerifier:
@@ -158,9 +131,9 @@ def build_mcp(
     base_url: str,
     token_verifier: Callable[[], TokenVerifier],
     recipe_service: Callable[[], RecipeService],
-) -> FastMCP:
+) -> ChefMCP:
     host = urlsplit(base_url).netloc
-    mcp = _ChefMCP(
+    mcp = ChefMCP(
         name="Chef",
         instructions=(
             "Chef holds the user's recipes and recipes shared by the community. "
@@ -184,4 +157,5 @@ def build_mcp(
         ),
     )
     register_tools(mcp, recipe_service)
+    register_resources(mcp, recipe_service)
     return mcp

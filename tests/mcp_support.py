@@ -121,6 +121,22 @@ class McpClient:
         assert response.status_code == 200, response.text
         return response.json()["result"]["tools"]
 
+    def list_resources(self) -> list[dict[str, Any]]:
+        response = self.post("resources/list")
+        assert response.status_code == 200, response.text
+        return response.json()["result"]["resources"]
+
+    def list_resource_templates(self) -> list[dict[str, Any]]:
+        response = self.post("resources/templates/list")
+        assert response.status_code == 200, response.text
+        return response.json()["result"]["resourceTemplates"]
+
+    def read(self, uri: str) -> dict[str, Any]:
+        """The JSON-RPC response body: `result` with `contents`, or `error`."""
+        response = self.post("resources/read", {"uri": uri})
+        assert response.status_code == 200, response.text
+        return response.json()
+
     def call(self, name: str, **arguments: Any) -> dict[str, Any]:
         """The tool result: `isError`, `content` and (on success) `structuredContent`."""
         response = self.post("tools/call", {"name": name, "arguments": arguments})
