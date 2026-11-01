@@ -18,10 +18,16 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from chef_backend.auth import InvalidTokenError, TokenVerifier, get_token_verifier
 from chef_backend.config import Settings, get_settings
-from chef_backend.mcp_server.auth import RECIPES_READ_SCOPE
+from chef_backend.mcp_server.auth import RECIPES_READ_SCOPE, RECIPES_WRITE_SCOPE
 from chef_backend.mcp_server.oauth import ChefOAuthProvider, get_oauth_provider
 
-SCOPE_DESCRIPTIONS = {RECIPES_READ_SCOPE: "Read your recipes and the community's shared recipes"}
+SCOPE_DESCRIPTIONS = {
+    RECIPES_READ_SCOPE: "Read your recipes and the community's shared recipes",
+    RECIPES_WRITE_SCOPE: (
+        "Save new recipes to your Chef collection. As in the app, saved recipes are "
+        "shared with the community"
+    ),
+}
 
 SECURITY_HEADERS = {
     "Content-Security-Policy": (

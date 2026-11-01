@@ -1,5 +1,6 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import date
 from typing import Annotated
 
 from fastapi import Depends, FastAPI
@@ -11,6 +12,7 @@ from chef_backend.ai.dependencies import (
     get_chat_client,
     get_purposes,
     get_quota_store,
+    get_today,
 )
 from chef_backend.ai.routes import router as ai_router
 from chef_backend.auth import AuthenticatedUser, get_current_user, get_token_verifier
@@ -22,9 +24,15 @@ from chef_backend.images import router as images_router
 from chef_backend.mcp_server.auth import get_mcp_token_verifier
 from chef_backend.mcp_server.login import router as mcp_login_router
 from chef_backend.mcp_server.oauth import ChefOAuthProvider, get_oauth_provider
-from chef_backend.mcp_server.server import StatelessOnly, build_mcp, build_oauth_routes
+from chef_backend.mcp_server.server import (
+    StatelessOnly,
+    build_mcp,
+    build_oauth_routes,
+    build_resource_metadata_routes,
+)
 from chef_backend.recipes.routes import get_recipe_service
 from chef_backend.recipes.routes import router as recipes_router
+from chef_backend.recipes.saving import RecipeSaver, get_recipe_saver
 from chef_backend.recipes.service import RecipeService
 from chef_backend.telemetry import shutdown_tracing
 from chef_backend.tts import get_speech_synthesizer
@@ -46,6 +54,7 @@ def check_production_config() -> None:
     get_image_store()
     get_preferences_reader()
     get_recipe_service()
+    get_recipe_saver()
     get_oauth_provider()
     get_token_verifier()
 
@@ -89,16 +98,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def resolve_recipe_service() -> RecipeService:
         return app.dependency_overrides.get(get_recipe_service, get_recipe_service)()
 
+    def resolve_recipe_saver() -> RecipeSaver:
+        return app.dependency_overrides.get(get_recipe_saver, get_recipe_saver)()
+
+    def resolve_today() -> date:
+        return app.dependency_overrides.get(get_today, get_today)()
+
     def resolve_oauth_provider() -> ChefOAuthProvider:
         return app.dependency_overrides.get(get_oauth_provider, get_oauth_provider)()
 
     # The MCP authorization server: the SDK's OAuth endpoints and our login page.
     app.router.routes.extend(build_oauth_routes(settings.public_base_url, resolve_oauth_provider))
+    app.router.routes.extend(build_resource_metadata_routes(settings.public_base_url))
     app.include_router(mcp_login_router)
 
     # MCP is not FastAPI-routed, but resolving through dependency_overrides lets tests
     # swap its collaborators the same way as for the HTTP routes.
-    mcp = build_mcp(settings.public_base_url, resolve_token_verifier, resolve_recipe_service)
+    mcp = build_mcp(
+        settings.public_base_url,
+        resolve_token_verifier,
+        resolve_recipe_service,
+        resolve_recipe_saver,
+        resolve_today,
+    )
     # The router's fallback for paths no route matches: /mcp and the OAuth metadata under
     # /.well-known must sit at the top level, and every FastAPI route (also ones added
     # later) still matches first. The MCP app answers 404 for anything else.

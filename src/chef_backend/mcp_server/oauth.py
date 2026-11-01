@@ -326,7 +326,7 @@ def _redirect(redirect_uri: AnyUrl, **params: str | None) -> str:
 
 @lru_cache
 def get_oauth_provider() -> ChefOAuthProvider:
-    from chef_backend.mcp_server.auth import RECIPES_READ_SCOPE
+    from chef_backend.mcp_server.auth import SCOPES
     from chef_backend.mcp_server.server import MCP_PATH
 
     settings = get_settings()
@@ -336,7 +336,7 @@ def get_oauth_provider() -> ChefOAuthProvider:
         OAuthConfig(
             issuer_url=str(AnyHttpUrl(base_url)),
             resource_url=base_url + MCP_PATH,
-            scopes=[RECIPES_READ_SCOPE],
+            scopes=list(SCOPES),
             redirect_uri_allowlist=list(settings.mcp_redirect_uri_allowlist),
         ),
     )

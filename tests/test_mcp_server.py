@@ -53,7 +53,8 @@ def test_protected_resource_metadata(http: TestClient) -> None:
 
     assert metadata["resource"] == RESOURCE
     assert metadata["authorization_servers"] == [f"{BASE_URL}/"]
-    assert metadata["scopes_supported"] == ["recipes:read"]
+    # Every scope, so clients ask for write at sign-in too; only read is required.
+    assert metadata["scopes_supported"] == ["recipes:read", "recipes:write"]
 
 
 def test_an_unknown_token_is_401(http: TestClient) -> None:

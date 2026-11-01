@@ -88,7 +88,9 @@ def register(http: TestClient, redirect_uri: str = CLAUDE_CALLBACK, **extra: Any
     return http.post("/register", json=body)
 
 
-def start_login(http: TestClient, client_id: str, challenge: str) -> str:
+def start_login(
+    http: TestClient, client_id: str, challenge: str, scope: str = "recipes:read"
+) -> str:
     """GET /authorize; return the pending request id from the login page URL."""
     response = http.get(
         "/authorize",
@@ -99,7 +101,7 @@ def start_login(http: TestClient, client_id: str, challenge: str) -> str:
             "code_challenge": challenge,
             "code_challenge_method": "S256",
             "state": "xyz",
-            "scope": "recipes:read",
+            "scope": scope,
             "resource": RESOURCE,
         },
     )
@@ -194,6 +196,24 @@ def test_refresh_then_revoke(world: World) -> None:
     assert McpClient(world.http, new_access).post("tools/list").status_code == 401
 
 
+def test_a_client_that_asks_for_every_scope_gets_read_and_write(world: World) -> None:
+    client_id = register(world.http).json()["client_id"]
+    verifier, challenge = pkce()
+    request_id = start_login(world.http, client_id, challenge, scope="recipes:read recipes:write")
+
+    page = world.http.get("/oauth/login", params={"request": request_id})
+    redirect = finish_login(world.http, request_id, world.users.add()).json()["redirectUrl"]
+    tokens = exchange(world.http, client_id, code_from(redirect), verifier).json()
+
+    assert "Save new recipes to your Chef collection" in page.text
+    assert "shared with the community" in page.text
+    assert tokens["scope"] == "recipes:read recipes:write"
+
+
+def test_registration_defaults_to_every_scope(world: World) -> None:
+    assert register(world.http).json()["scope"] == "recipes:read recipes:write"
+
+
 # --- Registration ---------------------------------------------------------------------------
 
 
@@ -214,7 +234,7 @@ def test_a_local_client_may_register_a_loopback_redirect(world: World) -> None:
 
 
 def test_registration_cannot_ask_for_unknown_scopes(world: World) -> None:
-    assert register(world.http, scope="recipes:read recipes:write").status_code == 400
+    assert register(world.http, scope="recipes:read recipes:delete").status_code == 400
 
 
 # --- The login page ---------------------------------------------------------------------------
