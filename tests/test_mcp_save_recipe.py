@@ -12,8 +12,8 @@ RecipeSaver, and returns {"recipe": <the full recipe view>, "image": "added" |
 - Today's save budget used up: tool error "daily_save_limit_reached".
 - Invalid input (empty title, no ingredients, ...): a tool error, nothing saved.
 - Annotations: not read-only, not destructive, not idempotent (each call saves a
-  new recipe), closed world. The description says the recipe is shared with the
-  community, so the model can tell the user before saving.
+  new recipe), open world (it publishes to the community). The description says
+  the recipe is shared with the community, so the model can tell the user first.
 """
 
 from collections.abc import Iterator
@@ -130,13 +130,14 @@ def error_text(result: dict[str, Any]) -> str:
 # --- What the model sees ----------------------------------------------------------------
 
 
-def test_the_tool_is_a_closed_world_non_idempotent_write(world: World) -> None:
+def test_the_tool_is_an_open_world_non_idempotent_write(world: World) -> None:
     annotations = save_tool(world.writer()).get("annotations") or {}
 
     assert annotations.get("readOnlyHint") is False
     assert annotations.get("destructiveHint") is False
     assert annotations.get("idempotentHint") is False
-    assert annotations.get("openWorldHint") is False
+    # It publishes to the community, i.e. to other users.
+    assert annotations.get("openWorldHint") is True
 
 
 def test_the_description_says_saved_recipes_are_shared(world: World) -> None:

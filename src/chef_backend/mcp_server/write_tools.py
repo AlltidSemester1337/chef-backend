@@ -48,8 +48,10 @@ def register_write_tools(
             "call it once per recipe. Returns the saved recipe and whether an image was "
             "generated for it."
         ),
+        # Open world: a saved recipe is shared with other Chef users, so clients that
+        # weigh annotations should treat it with the care of publishing.
         annotations=ToolAnnotations(
-            readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False
+            readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True
         ),
     )
     def save_recipe(
