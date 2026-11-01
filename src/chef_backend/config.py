@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     daily_ai_uncounted_call_limit: int = 50
     daily_tts_char_limit: int = 25_000
     daily_image_limit: int = 20
+    daily_recipe_save_limit: int = 20
 
     # Recipe images: generated with Vertex AI (ADC) and stored in Cloud Storage for
     # Firebase. The bucket name is project-specific config, so it has no default.

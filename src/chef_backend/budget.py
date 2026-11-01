@@ -25,6 +25,7 @@ class UsageKind(StrEnum):
     AI_UNCOUNTED_CALLS = "ai_uncounted_calls"
     TTS_CHARS = "tts_chars"
     IMAGES = "images"
+    RECIPE_SAVES = "recipe_saves"
 
 
 class BudgetDecision(StrEnum):

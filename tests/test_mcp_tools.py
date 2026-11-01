@@ -32,7 +32,12 @@ from chef_backend.mcp_server.auth import get_mcp_token_verifier
 from chef_backend.recipes.routes import get_recipe_service
 from chef_backend.recipes.service import RecipeService
 
-TOOL_NAMES = {"search_recipes", "get_recipe", "list_recipe_variants"}
+READ_TOOLS = {"search_recipes", "get_recipe", "list_recipe_variants"}
+WRITE_TOOLS = {"save_recipe"}  # specified in test_mcp_save_recipe.py
+
+
+def read_tools(mcp: McpClient) -> list[dict[str, Any]]:
+    return [tool for tool in mcp.list_tools() if tool["name"] in READ_TOOLS]
 
 
 @pytest.fixture
@@ -62,8 +67,8 @@ def error_text(result: dict[str, Any]) -> str:
 # --- The tool list: what the model sees ----------------------------------------
 
 
-def test_exactly_the_three_recipe_tools_are_offered(mcp: McpClient) -> None:
-    assert {tool["name"] for tool in mcp.list_tools()} == TOOL_NAMES
+def test_exactly_the_recipe_tools_are_offered(mcp: McpClient) -> None:
+    assert {tool["name"] for tool in mcp.list_tools()} == READ_TOOLS | WRITE_TOOLS
 
 
 def test_every_tool_is_described_for_the_model(mcp: McpClient) -> None:
@@ -73,8 +78,8 @@ def test_every_tool_is_described_for_the_model(mcp: McpClient) -> None:
             assert schema.get("description"), f"{tool['name']}.{name} has no description"
 
 
-def test_every_tool_is_marked_read_only(mcp: McpClient) -> None:
-    for tool in mcp.list_tools():
+def test_every_read_tool_is_marked_read_only(mcp: McpClient) -> None:
+    for tool in read_tools(mcp):
         annotations = tool.get("annotations") or {}
         assert annotations.get("readOnlyHint") is True, tool["name"]
         assert annotations.get("openWorldHint") is False, tool["name"]
@@ -101,7 +106,7 @@ def test_the_scope_description_explains_every_value(mcp: McpClient) -> None:
 
 
 def test_recipe_id_is_required(mcp: McpClient) -> None:
-    for tool in mcp.list_tools():
+    for tool in read_tools(mcp):
         if tool["name"] != "search_recipes":
             assert tool["inputSchema"]["required"] == ["recipe_id"], tool["name"]
 

@@ -1,6 +1,7 @@
 """Builds the FastMCP server and its ASGI app, mounted into the FastAPI app."""
 
 from collections.abc import Callable
+from datetime import date
 from urllib.parse import urlsplit
 
 from mcp.server.auth.provider import (
@@ -10,7 +11,7 @@ from mcp.server.auth.provider import (
     RefreshToken,
     TokenVerifier,
 )
-from mcp.server.auth.routes import create_auth_routes
+from mcp.server.auth.routes import create_auth_routes, create_protected_resource_routes
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
@@ -19,11 +20,13 @@ from starlette.responses import Response
 from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from chef_backend.mcp_server.auth import RECIPES_READ_SCOPE
+from chef_backend.mcp_server.auth import RECIPES_READ_SCOPE, SCOPES
 from chef_backend.mcp_server.base import ChefMCP
 from chef_backend.mcp_server.oauth import ChefOAuthProvider
 from chef_backend.mcp_server.resources import register_resources
 from chef_backend.mcp_server.tools import register_tools
+from chef_backend.mcp_server.write_tools import register_write_tools
+from chef_backend.recipes.saving import RecipeSaver
 from chef_backend.recipes.service import RecipeService
 
 MCP_PATH = "/mcp"
@@ -120,10 +123,24 @@ def build_oauth_routes(
         issuer_url=AnyHttpUrl(base_url),
         client_registration_options=ClientRegistrationOptions(
             enabled=True,
-            valid_scopes=[RECIPES_READ_SCOPE],
-            default_scopes=[RECIPES_READ_SCOPE],
+            valid_scopes=list(SCOPES),
+            default_scopes=list(SCOPES),
         ),
         revocation_options=RevocationOptions(enabled=True),
+    )
+
+
+def build_resource_metadata_routes(base_url: str) -> list[Route]:
+    """Protected resource metadata (RFC 9728) listing every scope, not only the required one.
+
+    FastMCP derives scopes_supported from the scopes every request needs (read), so
+    clients would never ask for write at sign-in. This route is matched before the
+    MCP app's own.
+    """
+    return create_protected_resource_routes(
+        resource_url=AnyHttpUrl(base_url.rstrip("/") + MCP_PATH),
+        authorization_servers=[AnyHttpUrl(base_url)],
+        scopes_supported=list(SCOPES),
     )
 
 
@@ -131,6 +148,8 @@ def build_mcp(
     base_url: str,
     token_verifier: Callable[[], TokenVerifier],
     recipe_service: Callable[[], RecipeService],
+    recipe_saver: Callable[[], RecipeSaver],
+    today: Callable[[], date],
 ) -> ChefMCP:
     host = urlsplit(base_url).netloc
     mcp = ChefMCP(
@@ -158,4 +177,5 @@ def build_mcp(
     )
     register_tools(mcp, recipe_service)
     register_resources(mcp, recipe_service)
+    register_write_tools(mcp, recipe_saver, today)
     return mcp
