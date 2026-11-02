@@ -4,7 +4,8 @@ FastMCP only lists resources registered at startup, but a user's recipes differ 
 user, so resource listers registered with `@mcp.resource_lister()` add resources
 for the current request's user. And FastMCP passes exception messages to the client
 in both tool results and resource read errors, which could expose infrastructure
-details; here only errors raised on purpose reach the client.
+details; here only errors raised on purpose reach the client (tools, resources and
+prompts alike).
 """
 
 import logging
@@ -12,9 +13,9 @@ from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.exceptions import ResourceError, ToolError
+from mcp.server.fastmcp.exceptions import FastMCPError, ResourceError, ToolError
 from mcp.server.lowlevel.helper_types import ReadResourceContents
-from mcp.types import ContentBlock
+from mcp.types import ContentBlock, GetPromptResult
 from mcp.types import Resource as MCPResource
 from pydantic import AnyUrl, ValidationError
 
@@ -22,18 +23,30 @@ logger = logging.getLogger(__name__)
 
 INTERNAL_ERROR = "internal_error"
 UNKNOWN_RESOURCE = "unknown_resource"
+INVALID_ARGUMENTS = "invalid_arguments"
+# Messages FastMCP itself raises for prompts that are safe to show: they name the
+# prompt or the missing argument, never a value or an internal detail.
+_SAFE_PROMPT_ERRORS = ("Unknown prompt:", "Missing required arguments:")
 
 ResourceLister = Callable[[], Iterable[MCPResource]]
 
 
-def _deliberate_resource_error(error: BaseException) -> ResourceError | None:
-    """The ResourceError a resource function raised, under FastMCP's re-wrapping."""
+class PromptError(FastMCPError):
+    """Raised by a prompt function on purpose; its message is shown to the client."""
+
+
+def _find_in_chain[E: BaseException](error: BaseException, kind: type[E]) -> E | None:
+    """The first exception of `kind` in the cause/context chain, under FastMCP's re-wrapping."""
     seen: BaseException | None = error
     while seen is not None:
-        if isinstance(seen, ResourceError):
+        if isinstance(seen, kind):
             return seen
         seen = seen.__cause__ or seen.__context__
     return None
+
+
+def _deliberate_resource_error(error: BaseException) -> ResourceError | None:
+    return _find_in_chain(error, ResourceError)
 
 
 class ChefMCP(FastMCP):
@@ -88,3 +101,21 @@ class ChefMCP(FastMCP):
                 raise ResourceError(UNKNOWN_RESOURCE) from None
             logger.error("MCP resource read failed", exc_info=error)
             raise ResourceError(INTERNAL_ERROR) from None
+
+    async def get_prompt(
+        self, name: str, arguments: dict[str, Any] | None = None
+    ) -> GetPromptResult:
+        """A PromptError raised by a prompt function passes through with its own message, as
+        do FastMCP's unknown-prompt and missing-argument errors; invalid arguments are
+        "invalid_arguments"; anything else is logged and reported as "internal_error"."""
+        try:
+            return await super().get_prompt(name, arguments)
+        except Exception as error:
+            if (deliberate := _find_in_chain(error, PromptError)) is not None:
+                raise PromptError(str(deliberate)) from None
+            if _find_in_chain(error, ValidationError) is not None:
+                raise PromptError(INVALID_ARGUMENTS) from None
+            if str(error).startswith(_SAFE_PROMPT_ERRORS):
+                raise PromptError(str(error)) from None
+            logger.error("MCP prompt %s failed", name, exc_info=error)
+            raise PromptError(INTERNAL_ERROR) from None

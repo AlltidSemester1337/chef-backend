@@ -16,7 +16,7 @@ from pydantic import AnyUrl
 
 from chef_backend.main import create_app
 from chef_backend.mcp_server.auth import current_uid, get_mcp_token_verifier
-from chef_backend.mcp_server.base import ChefMCP
+from chef_backend.mcp_server.base import ChefMCP, PromptError
 from chef_backend.recipes.routes import get_recipe_service
 from chef_backend.recipes.service import RecipeService
 
@@ -244,3 +244,50 @@ def test_deliberate_resource_errors_and_unknown_uris_reach_the_client(
 ) -> None:
     assert app_with_test_resources.read("test://refuse/x")["error"]["message"] == "recipe_not_found"
     assert app_with_test_resources.read("nope://x")["error"]["message"] == "unknown_resource"
+
+
+# --- Prompts -------------------------------------------------------------------------
+
+
+@pytest.fixture
+def app_with_test_prompts(verifier: FakeMcpTokenVerifier) -> Iterator[McpClient]:
+    """The real app plus throwaway prompts, independent of the recipe prompts."""
+    app = create_app()
+    app.dependency_overrides[get_mcp_token_verifier] = lambda: verifier
+    mcp: ChefMCP = app.state.mcp
+
+    @mcp.prompt()
+    def crash() -> str:
+        raise RuntimeError("projects/secret-project/databases/(default) detail")
+
+    @mcp.prompt()
+    def refuse() -> str:
+        raise PromptError("days must be between 1 and 7")
+
+    @mcp.prompt()
+    def needs(word: str) -> str:
+        return f"Say {word}."
+
+    with TestClient(app, base_url=BASE_URL) as client:
+        yield McpClient(client, verifier.issue())
+
+
+def test_unexpected_prompt_failures_are_internal_error_without_details(
+    app_with_test_prompts: McpClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    response = app_with_test_prompts.get_prompt("crash")
+
+    assert response["error"]["message"] == "internal_error"
+    assert "secret-project" in caplog.text  # logged for us, not sent to the client
+
+
+def test_deliberate_and_safe_prompt_errors_reach_the_client(
+    app_with_test_prompts: McpClient,
+) -> None:
+    def message(name: str, **arguments: str) -> str:
+        return app_with_test_prompts.get_prompt(name, **arguments)["error"]["message"]
+
+    assert message("refuse") == "days must be between 1 and 7"
+    assert message("nope").startswith("Unknown prompt:")
+    assert message("needs").startswith("Missing required arguments:")
+    assert app_with_test_prompts.get_prompt("needs", word="hi")["result"]["messages"]
