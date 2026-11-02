@@ -23,6 +23,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from chef_backend.mcp_server.auth import RECIPES_READ_SCOPE, SCOPES
 from chef_backend.mcp_server.base import ChefMCP
 from chef_backend.mcp_server.oauth import ChefOAuthProvider
+from chef_backend.mcp_server.prompts import register_prompts
 from chef_backend.mcp_server.resources import register_resources
 from chef_backend.mcp_server.tools import register_tools
 from chef_backend.mcp_server.write_tools import register_write_tools
@@ -177,5 +178,6 @@ def build_mcp(
     )
     register_tools(mcp, recipe_service)
     register_resources(mcp, recipe_service)
+    register_prompts(mcp, recipe_service)
     register_write_tools(mcp, recipe_saver, today)
     return mcp
