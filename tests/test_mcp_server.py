@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from mcp.server.auth.provider import ProviderTokenVerifier
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import ResourceError, ToolError
-from mcp.types import Resource
+from mcp.types import CompleteRequest, Resource
 from mcp_support import BASE_URL, RESOURCE, FakeMcpTokenVerifier, FakeRecipeRepository, McpClient
 from pydantic import AnyUrl
 
@@ -291,3 +291,28 @@ def test_deliberate_and_safe_prompt_errors_reach_the_client(
     assert message("nope").startswith("Unknown prompt:")
     assert message("needs").startswith("Missing required arguments:")
     assert app_with_test_prompts.get_prompt("needs", word="hi")["result"]["messages"]
+
+
+# --- Completion ----------------------------------------------------------------------
+
+
+def test_a_failing_completion_handler_gives_no_suggestions_and_no_details(
+    verifier: FakeMcpTokenVerifier, caplog: pytest.LogCaptureFixture
+) -> None:
+    app = create_app()
+    app.dependency_overrides[get_mcp_token_verifier] = lambda: verifier
+    mcp: ChefMCP = app.state.mcp
+    mcp._mcp_server.request_handlers.pop(CompleteRequest, None)  # pyright: ignore[reportPrivateUsage]
+
+    @mcp.completion()
+    async def crash(ref: object, argument: object, context: object) -> None:
+        raise RuntimeError("projects/secret-project/databases/(default) detail")
+
+    with TestClient(app, base_url=BASE_URL) as client:
+        response = McpClient(client, verifier.issue()).complete(
+            {"type": "ref/prompt", "name": "anything"}, "x", "y"
+        )
+
+    assert response["result"]["completion"]["values"] == []
+    assert "secret-project" not in str(response)
+    assert "secret-project" in caplog.text

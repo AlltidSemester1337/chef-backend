@@ -9,13 +9,21 @@ prompts alike).
 """
 
 import logging
-from collections.abc import Callable, Iterable, Sequence
-from typing import Any
+from collections.abc import Awaitable, Callable, Iterable, Sequence
+from typing import Any, Protocol
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.fastmcp.exceptions import FastMCPError, ResourceError, ToolError
 from mcp.server.lowlevel.helper_types import ReadResourceContents
-from mcp.types import ContentBlock, GetPromptResult
+from mcp.types import (
+    Completion,
+    CompletionArgument,
+    CompletionContext,
+    ContentBlock,
+    GetPromptResult,
+    PromptReference,
+    ResourceTemplateReference,
+)
 from mcp.types import Resource as MCPResource
 from pydantic import AnyUrl, ValidationError
 
@@ -29,6 +37,14 @@ INVALID_ARGUMENTS = "invalid_arguments"
 _SAFE_PROMPT_ERRORS = ("Unknown prompt:", "Missing required arguments:")
 
 ResourceLister = Callable[[], Iterable[MCPResource]]
+CompletionHandler = Callable[
+    [PromptReference | ResourceTemplateReference, CompletionArgument, CompletionContext | None],
+    Awaitable[Completion | None],
+]
+
+
+class CompletionDecorator(Protocol):
+    def __call__(self, func: CompletionHandler) -> CompletionHandler: ...
 
 
 class PromptError(FastMCPError):
@@ -62,6 +78,31 @@ class ChefMCP(FastMCP):
             return fn
 
         return register
+
+    def completion(self) -> CompletionDecorator:
+        """Register the server's one completion handler, with internal errors hidden.
+
+        Completion is only a convenience: a failing handler is logged and answers with
+        no suggestions instead of an error message.
+        """
+        register = super().completion()
+
+        def wrap(func: CompletionHandler) -> CompletionHandler:
+            async def safe(
+                ref: PromptReference | ResourceTemplateReference,
+                argument: CompletionArgument,
+                context: CompletionContext | None,
+            ) -> Completion | None:
+                try:
+                    return await func(ref, argument, context)
+                except Exception:
+                    logger.exception("MCP completion failed")
+                    return None
+
+            register(safe)
+            return func
+
+        return wrap
 
     async def list_resources(self) -> list[MCPResource]:
         listed = await super().list_resources()
