@@ -148,6 +148,17 @@ class McpClient:
         assert response.status_code == 200, response.text
         return response.json()
 
+    def complete(
+        self, ref: dict[str, str], argument: str, value: str, **context: str
+    ) -> dict[str, Any]:
+        """The JSON-RPC response body for completion/complete."""
+        params: dict[str, Any] = {"ref": ref, "argument": {"name": argument, "value": value}}
+        if context:
+            params["context"] = {"arguments": context}
+        response = self.post("completion/complete", params)
+        assert response.status_code == 200, response.text
+        return response.json()
+
     def call(self, name: str, **arguments: Any) -> dict[str, Any]:
         """The tool result: `isError`, `content` and (on success) `structuredContent`."""
         response = self.post("tools/call", {"name": name, "arguments": arguments})
