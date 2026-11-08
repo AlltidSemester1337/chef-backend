@@ -6,21 +6,27 @@ from datetime import UTC, date, datetime
 from typing import Any
 
 import pytest
+from mcp_support import ME, FakeRecipeRepository
 from PIL import Image
 from pydantic import ValidationError
 
 from chef_backend.ai.client import UpstreamError
 from chef_backend.budget import UsageKind
-from chef_backend.recipes.models import Recipe
+from chef_backend.recipes.models import Recipe, RecipeVariant
 from chef_backend.recipes.saving import (
     DailySaveLimitReached,
     ImageOutcome,
+    NotRecipeOwner,
     RecipeDraft,
+    RecipeNotFound,
     RecipeSaver,
     SaveLimits,
+    VariantDraft,
     image_prompt,
     recipe_document,
+    variant_document,
 )
+from chef_backend.recipes.service import RecipeService
 
 UID = "cook-1"
 TODAY = date(2026, 11, 1)
@@ -52,6 +58,9 @@ def png() -> bytes:
 class FakeStore:
     created: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
     images: dict[str, str] = field(default_factory=dict[str, str])
+    variants: list[tuple[str, dict[str, Any]]] = field(
+        default_factory=list[tuple[str, dict[str, Any]]]
+    )
 
     def create(self, uid: str, draft: RecipeDraft, now: datetime) -> Recipe:
         document = recipe_document(f"new-{len(self.created) + 1}", uid, draft, now)
@@ -60,6 +69,11 @@ class FakeStore:
 
     def set_image_url(self, recipe_id: str, image_url: str) -> None:
         self.images[recipe_id] = image_url
+
+    def create_variant(self, recipe_id: str, draft: VariantDraft, now: datetime) -> RecipeVariant:
+        document = variant_document(f"variant-{len(self.variants) + 1}", draft, now)
+        self.variants.append((recipe_id, document))
+        return RecipeVariant.model_validate(document)
 
 
 @dataclass
@@ -98,6 +112,7 @@ class FakeImageStore:
 @dataclass
 class World:
     store: FakeStore = field(default_factory=FakeStore)
+    repository: FakeRecipeRepository = field(default_factory=FakeRecipeRepository)
     budget: FakeBudget = field(default_factory=FakeBudget)
     generator: FakeGenerator = field(default_factory=FakeGenerator)
     images: FakeImageStore = field(default_factory=FakeImageStore)
@@ -106,6 +121,7 @@ class World:
     def saver(self) -> RecipeSaver:
         return RecipeSaver(
             self.store,
+            RecipeService(self.repository),
             self.budget,
             lambda: self.generator,
             lambda: self.images,
@@ -241,3 +257,81 @@ def test_a_failing_image_leaves_the_recipe_saved_without_one(
     assert saved.recipe.image_url is None and world.store.images == {}
     assert len(world.store.created) == 1
     assert "new-1" in caplog.text and "PRIVATE" not in caplog.text
+
+
+# --- Variants ----------------------------------------------------------------------
+
+
+def variant(**overrides: Any) -> VariantDraft:
+    values: dict[str, Any] = {
+        "label": "For two",
+        "title": "Chana masala for two",
+        "servings": "2",
+        "ingredients": [{"name": "chickpeas", "quantity": "400", "unit": "g"}],
+        "instructions": ["Fry the onion.", "Simmer."],
+    }
+    return VariantDraft.model_validate(values | overrides)
+
+
+def test_a_variant_is_added_to_the_users_own_recipe(world: World) -> None:
+    saved = world.saver().save_variant(ME, "mine", variant(), TODAY)
+
+    [(recipe_id, document)] = world.store.variants
+    assert recipe_id == "mine"
+    assert document == {
+        "id": saved.id,
+        "label": "For two",
+        "createdAt": NOW,
+        "isPinned": False,
+        "title": "Chana masala for two",
+        "summary": "",
+        "servings": "2",
+        "prepTime": "",
+        "cookingTime": "",
+        "difficulty": None,
+        "ingredients": [{"name": "chickpeas", "quantity": "400", "unit": "g"}],
+        "instructions": ["Fry the onion.", "Simmer."],
+        "tipsAndTricks": "",
+        "nutrientsPerServing": [],
+    }
+    assert (saved.label, saved.is_pinned) == ("For two", False)
+
+
+@pytest.mark.parametrize(
+    ("recipe_id", "error"),
+    [
+        ("theirs-shared", NotRecipeOwner),
+        ("theirs-private", RecipeNotFound),
+        ("missing", RecipeNotFound),
+        ("mine/variants/x", RecipeNotFound),
+    ],
+    ids=["someone else's shared", "someone else's private", "missing", "a path"],
+)
+def test_only_the_owner_can_add_a_variant(
+    world: World, recipe_id: str, error: type[Exception]
+) -> None:
+    with pytest.raises(error):
+        world.saver().save_variant(ME, recipe_id, variant(), TODAY)
+
+    assert world.store.variants == []
+    assert world.budget.usage == {}
+
+
+def test_variants_and_recipes_share_the_daily_save_budget(world: World) -> None:
+    saver = world.saver()
+    saver.save(ME, draft(), TODAY)
+    saver.save_variant(ME, "mine", variant(), TODAY)
+
+    with pytest.raises(DailySaveLimitReached):
+        saver.save_variant(ME, "mine", variant(), TODAY)
+    assert len(world.store.variants) == 1
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [{"label": ""}, {"label": "x" * 101}, {"title": ""}, {"ingredients": []}, {"tags": ["x"]}],
+    ids=["empty label", "long label", "empty title", "no ingredients", "tags"],
+)
+def test_invalid_variant_drafts_are_rejected(overrides: dict[str, Any]) -> None:
+    with pytest.raises(ValidationError):
+        variant(**overrides)

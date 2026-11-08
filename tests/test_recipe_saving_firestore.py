@@ -10,9 +10,13 @@ from datetime import UTC, datetime
 import pytest
 from google.cloud import firestore
 
-from chef_backend.recipes.models import parse_recipe
-from chef_backend.recipes.repository import RECIPES_COLLECTION, FirestoreRecipeRepository
-from chef_backend.recipes.saving import FirestoreRecipeStore, RecipeDraft
+from chef_backend.recipes.models import parse_recipe, parse_variant
+from chef_backend.recipes.repository import (
+    RECIPES_COLLECTION,
+    VARIANTS_COLLECTION,
+    FirestoreRecipeRepository,
+)
+from chef_backend.recipes.saving import FirestoreRecipeStore, RecipeDraft, VariantDraft
 
 pytestmark = pytest.mark.skipif(
     "FIRESTORE_EMULATOR_HOST" not in os.environ, reason="needs the Firestore emulator"
@@ -60,3 +64,31 @@ def test_the_image_url_is_added_afterwards(client: firestore.Client) -> None:
 
     recipe = FirestoreRecipeRepository(client).get(created.id)
     assert recipe is not None and recipe.image_url == "https://images.example/a.jpg"
+
+
+def test_a_created_variant_is_stored_under_its_recipe(client: firestore.Client) -> None:
+    store = FirestoreRecipeStore(client)
+    recipe = store.create(f"cook-{uuid.uuid4()}", draft(), NOW)
+    variant = VariantDraft.model_validate(
+        {
+            "label": "Buttered",
+            "title": "Buttered toast",
+            "ingredients": [{"name": "bread"}, {"name": "butter"}],
+            "instructions": ["Toast the bread.", "Butter it."],
+        }
+    )
+
+    created = store.create_variant(recipe.id, variant, NOW)
+
+    snapshot = (
+        client.collection(RECIPES_COLLECTION)
+        .document(recipe.id)
+        .collection(VARIANTS_COLLECTION)
+        .document(created.id)
+        .get()
+    )
+    data = snapshot.to_dict()
+    assert data is not None and data["id"] == created.id and data["createdAt"] == NOW
+    assert parse_variant(created.id, data) is not None
+    [listed] = FirestoreRecipeRepository(client).list_variants(recipe.id)
+    assert (listed.id, listed.label, listed.is_pinned) == (created.id, "Buttered", False)

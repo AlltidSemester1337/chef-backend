@@ -29,14 +29,16 @@ from test_recipe_saving import FakeBudget, FakeGenerator, FakeImageStore
 from chef_backend.ai.dependencies import get_today
 from chef_backend.main import create_app
 from chef_backend.mcp_server.auth import RECIPES_READ_SCOPE, get_mcp_token_verifier
-from chef_backend.recipes.models import Recipe
+from chef_backend.recipes.models import Recipe, RecipeVariant
 from chef_backend.recipes.routes import get_recipe_service
 from chef_backend.recipes.saving import (
     RecipeDraft,
     RecipeSaver,
     SaveLimits,
+    VariantDraft,
     get_recipe_saver,
     recipe_document,
+    variant_document,
 )
 from chef_backend.recipes.service import RecipeService
 
@@ -75,6 +77,12 @@ class RepositoryBackedStore:
     def set_image_url(self, recipe_id: str, image_url: str) -> None:
         self.images[recipe_id] = image_url
 
+    def create_variant(self, recipe_id: str, draft: VariantDraft, now: datetime) -> RecipeVariant:
+        saved = self.repository.saved_variants.setdefault(recipe_id, [])
+        document = variant_document(f"variant-{len(saved) + 1}", draft, now)
+        saved.append(RecipeVariant.model_validate(document))
+        return saved[-1]
+
 
 @dataclass
 class World:
@@ -99,6 +107,7 @@ def world() -> Iterator[World]:
     budget = FakeBudget()
     saver = RecipeSaver(
         store,
+        RecipeService(repository),
         budget,
         FakeGenerator,
         FakeImageStore,

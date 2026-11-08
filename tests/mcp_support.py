@@ -81,6 +81,10 @@ class FakeRecipeRepository:
             recipe("theirs-private", OTHER, day=3),
         ]
     )
+    # Variants saved during a test, after the one fixed variant every recipe has.
+    saved_variants: dict[str, list[RecipeVariant]] = field(
+        default_factory=dict[str, list[RecipeVariant]]
+    )
 
     def list_by_owner(self, uid: str) -> list[Recipe]:
         return [r for r in reversed(self.recipes) if r.uid == uid]
@@ -95,7 +99,8 @@ class FakeRecipeRepository:
         return [
             RecipeVariant.model_validate(
                 {"id": "v1", "label": "Mild", "title": "Mild", "createdAt": T0, "isPinned": True}
-            )
+            ),
+            *self.saved_variants.get(recipe_id, []),
         ]
 
 
