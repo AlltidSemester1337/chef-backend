@@ -33,7 +33,7 @@ from chef_backend.recipes.routes import get_recipe_service
 from chef_backend.recipes.service import RecipeService
 
 READ_TOOLS = {"search_recipes", "get_recipe", "list_recipe_variants"}
-WRITE_TOOLS = {"save_recipe"}  # specified in test_mcp_save_recipe.py
+WRITE_TOOLS = {"save_recipe", "save_recipe_variant"}  # see test_mcp_save_recipe.py and _variant.py
 
 
 def read_tools(mcp: McpClient) -> list[dict[str, Any]]:
