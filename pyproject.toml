@@ -24,6 +24,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "anthropic>=2.6.0",
     "httpx2>=2.13.1",
     "pyright>=1.1.390",
     "pytest>=8.3",

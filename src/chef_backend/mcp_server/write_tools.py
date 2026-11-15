@@ -86,7 +86,8 @@ def register_write_tools(
             "Save a new recipe to the user's Chef collection, for example one you created "
             "or adapted together in this conversation. Like saving in the Chef app, a saved "
             "recipe is also shared with the Chef community, so confirm with the user before "
-            "calling this. Write the recipe in English (Chef stores recipes in English) and "
+            "calling this, unless they have already asked you to save it. "
+            "Write the recipe in English (Chef stores recipes in English) and "
             "give every ingredient its quantity and unit. Each call saves a new recipe, so "
             "call it once per recipe. Returns the saved recipe and whether an image was "
             "generated for it. To adapt one of the user's own recipes while keeping the "
@@ -147,7 +148,8 @@ def register_write_tools(
             "recipe as the user's own with save_recipe instead. Give the whole adapted "
             "recipe, not only what changed, in English and with a quantity and unit for "
             "every ingredient. Variants of a recipe shared with the community are visible "
-            "to other Chef users too, so confirm with the user before calling this. Each "
+            "to other Chef users too, so confirm with the user before calling this, "
+            "unless they have already asked you to save it. Each "
             "call adds a new variant. Returns the saved variant."
         ),
         annotations=SHARED_WRITE,
