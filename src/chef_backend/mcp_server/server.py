@@ -13,9 +13,11 @@ from mcp.server.auth.provider import (
 )
 from mcp.server.auth.routes import create_auth_routes, create_protected_resource_routes
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
+from mcp.server.streamable_http import MCP_PROTOCOL_VERSION_HEADER
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 from pydantic import AnyHttpUrl
+from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -112,6 +114,22 @@ class StatelessOnly:
         await self._app(scope, receive, send)
 
 
+def with_cors(app: ASGIApp, allowed_origins: list[str]) -> ASGIApp:
+    """CORS for /mcp, so browser clients on `allowed_origins` can call it.
+
+    No credentials: /mcp authenticates with a bearer token, never cookies. The 401's
+    WWW-Authenticate is exposed because it tells the client where to sign in.
+    """
+    return CORSMiddleware(
+        app,
+        allow_origins=allowed_origins,
+        allow_methods=["POST"],
+        allow_headers=["Authorization", "Content-Type", MCP_PROTOCOL_VERSION_HEADER],
+        expose_headers=["WWW-Authenticate"],
+        max_age=600,
+    )
+
+
 def build_oauth_routes(
     base_url: str, oauth_provider: Callable[[], ChefOAuthProvider]
 ) -> list[Route]:
@@ -152,8 +170,10 @@ def build_mcp(
     recipe_service: Callable[[], RecipeService],
     recipe_saver: Callable[[], RecipeSaver],
     today: Callable[[], date],
+    allowed_origins: list[str],
 ) -> ChefMCP:
     host = urlsplit(base_url).netloc
+    own_origin = f"{urlsplit(base_url).scheme}://{host}"
     mcp = ChefMCP(
         name="Chef",
         instructions=(
@@ -174,7 +194,7 @@ def build_mcp(
             validate_token_resource=True,
         ),
         transport_security=TransportSecuritySettings(
-            allowed_hosts=[host], allowed_origins=[f"{urlsplit(base_url).scheme}://{host}"]
+            allowed_hosts=[host], allowed_origins=[own_origin, *allowed_origins]
         ),
     )
     register_tools(mcp, recipe_service)
