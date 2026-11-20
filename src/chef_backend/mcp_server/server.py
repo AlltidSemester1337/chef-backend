@@ -1,4 +1,4 @@
-"""Builds the FastMCP server and its ASGI app, mounted into the FastAPI app."""
+"""Builds the MCP server and its ASGI app, mounted into the FastAPI app."""
 
 from collections.abc import Callable
 from datetime import date
@@ -8,14 +8,15 @@ from mcp.server.auth.provider import (
     AccessToken,
     AuthorizationCode,
     AuthorizationParams,
+    IdentityAssertionParams,
     RefreshToken,
     TokenVerifier,
 )
 from mcp.server.auth.routes import create_auth_routes, create_protected_resource_routes
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, RevocationOptions
-from mcp.server.streamable_http import MCP_PROTOCOL_VERSION_HEADER
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+from mcp.shared.inbound import MCP_PROTOCOL_VERSION_HEADER
 from pydantic import AnyHttpUrl
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import Response
@@ -82,6 +83,11 @@ class _LazyOAuthProvider:
         self, client: OAuthClientInformationFull, refresh_token: RefreshToken, scopes: list[str]
     ) -> OAuthToken:
         return await self._get().exchange_refresh_token(client, refresh_token, scopes)
+
+    async def exchange_identity_assertion(
+        self, client: OAuthClientInformationFull, params: IdentityAssertionParams
+    ) -> OAuthToken:
+        return await self._get().exchange_identity_assertion(client, params)
 
     async def load_access_token(self, token: str) -> AccessToken | None:
         return await self._get().load_access_token(token)
@@ -153,7 +159,7 @@ def build_oauth_routes(
 def build_resource_metadata_routes(base_url: str) -> list[Route]:
     """Protected resource metadata (RFC 9728) listing every scope, not only the required one.
 
-    FastMCP derives scopes_supported from the scopes every request needs (read), so
+    MCPServer derives scopes_supported from the scopes every request needs (read), so
     clients would never ask for write at sign-in. This route is matched before the
     MCP app's own.
     """
@@ -170,31 +176,21 @@ def build_mcp(
     recipe_service: Callable[[], RecipeService],
     recipe_saver: Callable[[], RecipeSaver],
     today: Callable[[], date],
-    allowed_origins: list[str],
 ) -> ChefMCP:
-    host = urlsplit(base_url).netloc
-    own_origin = f"{urlsplit(base_url).scheme}://{host}"
     mcp = ChefMCP(
-        name="Chef",
+        "Chef",
         instructions=(
             "Chef holds the user's recipes and recipes shared by the community. "
             "Recipes are stored in English: translate search words to English, but answer "
             "the user in their own language. Typical flow: search_recipes to find "
             "candidates, then get_recipe for the one or few recipes you need in full."
         ),
-        # Cloud Run scales to zero and may run two instances: no server-side sessions.
-        stateless_http=True,
-        json_response=True,
-        streamable_http_path=MCP_PATH,
         token_verifier=_LazyTokenVerifier(token_verifier),
         auth=AuthSettings(
             issuer_url=AnyHttpUrl(base_url),
             resource_server_url=AnyHttpUrl(base_url + MCP_PATH),
             required_scopes=[RECIPES_READ_SCOPE],
             validate_token_resource=True,
-        ),
-        transport_security=TransportSecuritySettings(
-            allowed_hosts=[host], allowed_origins=[own_origin, *allowed_origins]
         ),
     )
     register_tools(mcp, recipe_service)
@@ -203,3 +199,19 @@ def build_mcp(
     register_completions(mcp, recipe_service)
     register_write_tools(mcp, recipe_saver, today)
     return mcp
+
+
+def build_mcp_app(mcp: ChefMCP, base_url: str, allowed_origins: list[str]) -> ASGIApp:
+    """The ASGI app serving /mcp: stateless JSON, Origin-checked, with CORS for browsers."""
+    host = urlsplit(base_url).netloc
+    own_origin = f"{urlsplit(base_url).scheme}://{host}"
+    http_app = mcp.streamable_http_app(
+        streamable_http_path=MCP_PATH,
+        # Cloud Run scales to zero and may run two instances: no server-side sessions.
+        stateless_http=True,
+        json_response=True,
+        transport_security=TransportSecuritySettings(
+            allowed_hosts=[host], allowed_origins=[own_origin, *allowed_origins]
+        ),
+    )
+    return with_cors(StatelessOnly(http_app), allowed_origins)

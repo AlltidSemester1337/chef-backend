@@ -184,7 +184,6 @@ class InMemoryOAuthStore:
         self.tokens: dict[str, StoredToken] = {}
 
     def save_client(self, client: OAuthClientInformationFull, expires_at: float) -> None:
-        assert client.client_id is not None
         self.clients[client.client_id] = (client, expires_at)
 
     def get_client(self, client_id: str) -> OAuthClientInformationFull | None:

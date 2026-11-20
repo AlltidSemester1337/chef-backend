@@ -9,7 +9,7 @@ from functools import lru_cache
 
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.provider import ProviderTokenVerifier, TokenVerifier
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError
 
 RECIPES_READ_SCOPE = "recipes:read"
 # Saving recipes. Requested at sign-in together with read; every /mcp request needs

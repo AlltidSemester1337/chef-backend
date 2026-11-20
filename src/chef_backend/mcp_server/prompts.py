@@ -9,9 +9,9 @@ rather than content. Prompt arguments always arrive as strings.
 from collections.abc import Callable
 from typing import Annotated
 
-from mcp.server.fastmcp.prompts.base import Message, UserMessage
+from mcp.server.mcpserver.prompts.base import Message, UserMessage
 from mcp.types import EmbeddedResource, TextResourceContents
-from pydantic import AnyUrl, Field
+from pydantic import Field
 
 from chef_backend.mcp_server.auth import current_uid
 from chef_backend.mcp_server.base import ChefMCP, PromptError
@@ -81,8 +81,8 @@ def register_prompts(mcp: ChefMCP, recipe_service: Callable[[], RecipeService]) 
                     content=EmbeddedResource(
                         type="resource",
                         resource=TextResourceContents(
-                            uri=AnyUrl(RECIPE_URI_TEMPLATE.format(recipe_id=recipe_id)),
-                            mimeType="text/markdown",
+                            uri=RECIPE_URI_TEMPLATE.format(recipe_id=recipe_id),
+                            mime_type="text/markdown",
                             text=recipe_markdown(RecipeView.of(recipe=recipe, viewer_uid=uid)),
                         ),
                     )

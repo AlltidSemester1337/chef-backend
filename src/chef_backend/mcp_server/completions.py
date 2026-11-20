@@ -70,4 +70,4 @@ def matching_ids(service: RecipeService, query: str) -> list[str]:
 def capped(values: list[str]) -> Completion:
     if len(values) <= MAX_SUGGESTIONS:
         return Completion(values=values)
-    return Completion(values=values[:MAX_SUGGESTIONS], total=len(values), hasMore=True)
+    return Completion(values=values[:MAX_SUGGESTIONS], total=len(values), has_more=True)
