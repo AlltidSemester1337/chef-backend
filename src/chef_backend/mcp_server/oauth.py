@@ -23,6 +23,7 @@ from mcp.server.auth.provider import (
     AuthorizationCode,
     AuthorizationParams,
     AuthorizeError,
+    IdentityAssertionParams,
     RefreshToken,
     RegistrationError,
     TokenError,
@@ -124,8 +125,6 @@ class ChefOAuthProvider:
         resource = params.resource or self._config.resource_url
         if resource.rstrip("/") != self._config.resource_url:
             raise AuthorizeError("invalid_request", "unknown resource")
-        if client.client_id is None:
-            raise AuthorizeError("unauthorized_client", "client has no id")
         request_id = new_secret("chef_req")
         pending = PendingAuthorization(
             client_id=client.client_id,
@@ -284,6 +283,13 @@ class ChefOAuthProvider:
         stored = await self._run(lambda: self._store.get_token(token.token))
         if stored is not None:
             await self._run(lambda: self._store.delete_grant(stored.grant_id))
+
+    async def exchange_identity_assertion(
+        self, client: OAuthClientInformationFull, params: IdentityAssertionParams
+    ) -> OAuthToken:
+        # Enterprise identity assertions (SEP-990) are not supported; the grant is also
+        # not advertised (identity_assertion_enabled is off).
+        raise TokenError("unsupported_grant_type", "identity assertions are not supported")
 
     # --- helpers -------------------------------------------------------------
 

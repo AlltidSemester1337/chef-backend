@@ -8,11 +8,10 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 from mcp.server.auth.provider import ProviderTokenVerifier
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.exceptions import ResourceError, ToolError
-from mcp.types import CompleteRequest, Resource
+from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ResourceError, ToolError
+from mcp.types import Resource
 from mcp_support import BASE_URL, RESOURCE, FakeMcpTokenVerifier, FakeRecipeRepository, McpClient
-from pydantic import AnyUrl
 
 from chef_backend.main import create_app
 from chef_backend.mcp_server.auth import current_uid, get_mcp_token_verifier
@@ -127,7 +126,7 @@ def app_with_test_tools(verifier: FakeMcpTokenVerifier) -> Iterator[McpClient]:
     """The real app plus throwaway tools, independent of the recipe tools."""
     app = create_app()
     app.dependency_overrides[get_mcp_token_verifier] = lambda: verifier
-    mcp: FastMCP = app.state.mcp
+    mcp: MCPServer = app.state.mcp
 
     @mcp.tool()
     def crash() -> str:
@@ -203,7 +202,7 @@ def app_with_test_resources(verifier: FakeMcpTokenVerifier) -> Iterator[McpClien
 
     @mcp.resource_lister()
     def per_user() -> list[Resource]:
-        return [Resource(uri=AnyUrl(f"test://user/{current_uid()}"), name="mine")]
+        return [Resource(uri=f"test://user/{current_uid()}", name="mine")]
 
     with TestClient(app, base_url=BASE_URL) as client:
         yield McpClient(client, verifier.issue())
@@ -302,7 +301,6 @@ def test_a_failing_completion_handler_gives_no_suggestions_and_no_details(
     app = create_app()
     app.dependency_overrides[get_mcp_token_verifier] = lambda: verifier
     mcp: ChefMCP = app.state.mcp
-    mcp._mcp_server.request_handlers.pop(CompleteRequest, None)  # pyright: ignore[reportPrivateUsage]
 
     @mcp.completion()
     async def crash(ref: object, argument: object, context: object) -> None:

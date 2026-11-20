@@ -25,11 +25,10 @@ from chef_backend.mcp_server.auth import get_mcp_token_verifier
 from chef_backend.mcp_server.login import router as mcp_login_router
 from chef_backend.mcp_server.oauth import ChefOAuthProvider, get_oauth_provider
 from chef_backend.mcp_server.server import (
-    StatelessOnly,
     build_mcp,
+    build_mcp_app,
     build_oauth_routes,
     build_resource_metadata_routes,
-    with_cors,
 )
 from chef_backend.recipes.routes import get_recipe_service
 from chef_backend.recipes.routes import router as recipes_router
@@ -121,14 +120,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         resolve_recipe_service,
         resolve_recipe_saver,
         resolve_today,
-        settings.mcp_allowed_origins,
     )
     # The router's fallback for paths no route matches: /mcp and the OAuth metadata under
     # /.well-known must sit at the top level, and every FastAPI route (also ones added
     # later) still matches first. The MCP app answers 404 for anything else.
-    app.router.default = with_cors(
-        StatelessOnly(mcp.streamable_http_app()), settings.mcp_allowed_origins
-    )
+    app.router.default = build_mcp_app(mcp, settings.public_base_url, settings.mcp_allowed_origins)
     app.state.mcp = mcp
     return app
 

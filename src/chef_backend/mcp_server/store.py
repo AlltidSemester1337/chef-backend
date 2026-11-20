@@ -124,8 +124,6 @@ class FirestoreOAuthStore:
     # --- clients -------------------------------------------------------------
 
     def save_client(self, client: OAuthClientInformationFull, expires_at: float) -> None:
-        if client.client_id is None:
-            raise ValueError("cannot store a client without an id")
         data = client.model_dump(mode="json", exclude_none=True)
         self._doc(CLIENTS_COLLECTION, client.client_id).set(
             {"client": data, "expireAt": _expire_at(expires_at)}

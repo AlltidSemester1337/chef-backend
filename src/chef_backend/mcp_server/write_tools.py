@@ -9,7 +9,7 @@ from collections.abc import Callable
 from datetime import date
 from typing import Annotated
 
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field, ValidationError
 
@@ -65,7 +65,7 @@ Nutrients = Annotated[
 # Open world: what these tools save can be seen by other Chef users, so clients that
 # weigh annotations should treat a call with the care of publishing.
 SHARED_WRITE = ToolAnnotations(
-    readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True
+    read_only_hint=False, destructive_hint=False, idempotent_hint=False, open_world_hint=True
 )
 
 

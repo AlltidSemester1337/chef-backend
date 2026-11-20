@@ -9,7 +9,7 @@ so those are part of the interface, not decoration.
 from collections.abc import Callable
 from typing import Annotated, Literal
 
-from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
@@ -24,7 +24,7 @@ from chef_backend.recipes.views import (
     VariantView,
 )
 
-READ_ONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
+READ_ONLY = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 
 RecipeId = Annotated[
     str,

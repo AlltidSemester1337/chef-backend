@@ -8,9 +8,8 @@ user's own recipes are listed so they show up in the attachment menu.
 
 from collections.abc import Callable
 
-from mcp.server.fastmcp.exceptions import ResourceError
+from mcp.server.mcpserver.exceptions import ResourceNotFoundError
 from mcp.types import Resource
-from pydantic import AnyUrl
 
 from chef_backend.mcp_server.auth import current_uid
 from chef_backend.mcp_server.base import ChefMCP
@@ -35,16 +34,16 @@ def register_resources(mcp: ChefMCP, recipe_service: Callable[[], RecipeService]
         uid = current_uid()
         recipe_details = recipe_service().get(uid=uid, recipe_id=recipe_id)
         if recipe_details is None:
-            raise ResourceError("recipe_not_found")
+            raise ResourceNotFoundError("recipe_not_found")
         return recipe_markdown(RecipeView.of(recipe=recipe_details, viewer_uid=uid))
 
     @mcp.resource_lister()
     def recipes() -> list[Resource]:
         return [
             Resource(
-                uri=AnyUrl(RECIPE_URI_TEMPLATE.format(recipe_id=recipe.id)),
+                uri=RECIPE_URI_TEMPLATE.format(recipe_id=recipe.id),
                 name=recipe.title,
-                mimeType="text/markdown",
+                mime_type="text/markdown",
                 description=short_summary(recipe.summary) or None,
             )
             for recipe in recipe_service().search(current_uid(), "", Scope.MINE, MAX_LISTED_RECIPES)

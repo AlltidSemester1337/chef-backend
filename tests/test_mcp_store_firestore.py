@@ -70,7 +70,6 @@ def test_clients_round_trip_and_expire(
     info = OAuthClientInformationFull(
         client_id=key("client"), client_name="Claude", redirect_uris=[CALLBACK]
     )
-    assert info.client_id is not None
 
     store.save_client(info, later())
     assert store.get_client(info.client_id) == info

@@ -1,26 +1,34 @@
-"""ChefMCP: FastMCP with per-user resource lists and no internal error messages.
+"""ChefMCP: MCPServer with per-user resource lists and short, stable error messages.
 
-FastMCP only lists resources registered at startup, but a user's recipes differ per
+MCPServer only lists resources registered at startup, but a user's recipes differ per
 user, so resource listers registered with `@mcp.resource_lister()` add resources
-for the current request's user. And FastMCP passes exception messages to the client
-in both tool results and resource read errors, which could expose infrastructure
-details; here only errors raised on purpose reach the client (tools, resources and
-prompts alike).
+for the current request's user. MCPServer already withholds the text of unexpected
+tool and resource errors, but passes prompt errors through as they are; here every
+error the client sees is either raised on purpose or a fixed code such as
+"internal_error" (tools, resources and prompts alike).
 """
 
 import logging
-from collections.abc import Awaitable, Callable, Iterable, Sequence
+from collections.abc import Awaitable, Callable, Iterable
 from typing import Any, Protocol
 
-from mcp.server.fastmcp import FastMCP
-from mcp.server.fastmcp.exceptions import FastMCPError, ResourceError, ToolError
 from mcp.server.lowlevel.helper_types import ReadResourceContents
+from mcp.server.mcpserver import Context, MCPServer
+from mcp.server.mcpserver.exceptions import (
+    MCPServerError,
+    ResourceError,
+    ResourceNotFoundError,
+    ToolError,
+    UnexpectedResourceError,
+    UnexpectedToolError,
+)
 from mcp.types import (
+    CallToolResult,
     Completion,
     CompletionArgument,
     CompletionContext,
-    ContentBlock,
     GetPromptResult,
+    InputRequiredResult,
     PromptReference,
     ResourceTemplateReference,
 )
@@ -32,7 +40,7 @@ logger = logging.getLogger(__name__)
 INTERNAL_ERROR = "internal_error"
 UNKNOWN_RESOURCE = "unknown_resource"
 INVALID_ARGUMENTS = "invalid_arguments"
-# Messages FastMCP itself raises for prompts that are safe to show: they name the
+# Messages MCPServer itself raises for prompts that are safe to show: they name the
 # prompt or the missing argument, never a value or an internal detail.
 _SAFE_PROMPT_ERRORS = ("Unknown prompt:", "Missing required arguments:")
 
@@ -47,12 +55,12 @@ class CompletionDecorator(Protocol):
     def __call__(self, func: CompletionHandler) -> CompletionHandler: ...
 
 
-class PromptError(FastMCPError):
+class PromptError(MCPServerError):
     """Raised by a prompt function on purpose; its message is shown to the client."""
 
 
 def _find_in_chain[E: BaseException](error: BaseException, kind: type[E]) -> E | None:
-    """The first exception of `kind` in the cause/context chain, under FastMCP's re-wrapping."""
+    """The first exception of `kind` in the cause/context chain, under MCPServer's re-wrapping."""
     seen: BaseException | None = error
     while seen is not None:
         if isinstance(seen, kind):
@@ -61,11 +69,7 @@ def _find_in_chain[E: BaseException](error: BaseException, kind: type[E]) -> E |
     return None
 
 
-def _deliberate_resource_error(error: BaseException) -> ResourceError | None:
-    return _find_in_chain(error, ResourceError)
-
-
-class ChefMCP(FastMCP):
+class ChefMCP(MCPServer):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._resource_listers: list[ResourceLister] = []
@@ -115,42 +119,42 @@ class ChefMCP(FastMCP):
         return listed
 
     async def call_tool(
-        self, name: str, arguments: dict[str, Any]
-    ) -> Sequence[ContentBlock] | dict[str, Any]:
+        self, name: str, arguments: dict[str, Any], context: Context | None = None
+    ) -> CallToolResult | InputRequiredResult:
         """Tool errors raised on purpose (ToolError) and argument validation errors
         (about the client's own input) pass through; anything else is logged and
         reported as "internal_error"."""
         try:
-            return await super().call_tool(name, arguments)
-        except ToolError as error:
-            if error.__cause__ is None or isinstance(error.__cause__, ToolError | ValidationError):
-                raise
+            return await super().call_tool(name, arguments, context)
+        except UnexpectedToolError as error:
             logger.error("MCP tool %s failed", name, exc_info=error.__cause__)
             raise ToolError(INTERNAL_ERROR) from None
 
-    async def read_resource(self, uri: AnyUrl | str) -> Iterable[ReadResourceContents]:
+    async def read_resource(
+        self, uri: AnyUrl | str, context: Context | None = None
+    ) -> Iterable[ReadResourceContents] | InputRequiredResult:
         """A ResourceError raised by a resource function passes through with its own
         message; an unknown URI is "unknown_resource"; anything else is logged and
         reported as "internal_error"."""
         try:
-            return await super().read_resource(uri)
-        except Exception as error:
-            deliberate = _deliberate_resource_error(error)
-            if deliberate is not None:
-                raise ResourceError(str(deliberate)) from None
+            return await super().read_resource(uri, context)
+        except ResourceNotFoundError as error:
+            # The SDK's own message repeats the URI; a resource function's is kept.
             if str(error).startswith("Unknown resource"):
-                raise ResourceError(UNKNOWN_RESOURCE) from None
-            logger.error("MCP resource read failed", exc_info=error)
+                raise ResourceNotFoundError(UNKNOWN_RESOURCE) from None
+            raise
+        except UnexpectedResourceError as error:
+            logger.error("MCP resource read failed", exc_info=error.__cause__)
             raise ResourceError(INTERNAL_ERROR) from None
 
     async def get_prompt(
-        self, name: str, arguments: dict[str, Any] | None = None
-    ) -> GetPromptResult:
+        self, name: str, arguments: dict[str, Any] | None = None, context: Context | None = None
+    ) -> GetPromptResult | InputRequiredResult:
         """A PromptError raised by a prompt function passes through with its own message, as
-        do FastMCP's unknown-prompt and missing-argument errors; invalid arguments are
+        do MCPServer's unknown-prompt and missing-argument errors; invalid arguments are
         "invalid_arguments"; anything else is logged and reported as "internal_error"."""
         try:
-            return await super().get_prompt(name, arguments)
+            return await super().get_prompt(name, arguments, context)
         except Exception as error:
             if (deliberate := _find_in_chain(error, PromptError)) is not None:
                 raise PromptError(str(deliberate)) from None

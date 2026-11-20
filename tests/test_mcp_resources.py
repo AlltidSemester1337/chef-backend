@@ -21,7 +21,7 @@ the recipe as Markdown (mimeType text/markdown) for the user in the access token
     The tips text.
 
 A section without content is left out. Invisible and missing recipes are the same
-error, "recipe_not_found". The owner's uid never appears.
+error, "recipe_not_found" (-32602, invalid params). The owner's uid never appears.
 
 Task 2, listing: resources/list includes the user's own recipes, newest first and at
 most MAX_LISTED_RECIPES, so they show up in the client's attachment menu. Each one
@@ -169,6 +169,7 @@ def test_another_users_shared_recipe_can_be_read_without_its_owner(mcp: McpClien
 def test_invisible_and_missing_recipes_are_the_same_error(mcp: McpClient, recipe_id: str) -> None:
     response: dict[str, Any] = mcp.read(f"chef://recipes/{recipe_id}")
 
+    assert response["error"]["code"] == -32602  # invalid params: not found (SEP-2164)
     assert response["error"]["message"] == "recipe_not_found"
 
 
