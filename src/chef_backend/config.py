@@ -49,6 +49,10 @@ class Settings(BaseSettings):
         "https://claude.ai/api/mcp/auth_callback",
         "https://claude.com/api/mcp/auth_callback",
     ]
+    # Browser origins allowed to call /mcp (CORS and the MCP Origin check), e.g. MCP
+    # Inspector's "http://localhost:6274" in Direct mode. Clients that are not browsers
+    # (Claude.ai, Claude Code) send no Origin and need no entry. Exact origins only.
+    mcp_allowed_origins: list[str] = []
     # The Firebase web app the login page signs in with. Public values (they ship in
     # every web page) but project-specific, so they come from the environment.
     firebase_web_api_key: str | None = None
